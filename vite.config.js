@@ -12,7 +12,8 @@ const timestamp = timeFormat("%Y-%m-%d-%H:%M")(new Date());
 export default defineConfig({
 	define: {
 		__VERSION__: JSON.stringify(version),
-		__TIMESTAMP__: JSON.stringify(timestamp)
+		__TIMESTAMP__: JSON.stringify(timestamp),
+		__VUE_PROD_DEVTOOLS__: 'false'
 	},
 	plugins: [sveltekit(), dsv(), svg()],
 	resolve: {
