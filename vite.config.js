@@ -17,6 +17,7 @@ export default defineConfig({
 	plugins: [sveltekit(), dsv(), svg()],
 	resolve: {
 		alias: {
+			'soot-webcomponents': 'soot-webcomponents/index.js',
 			$actions: path.resolve("./src/actions"),
 			$components: path.resolve("./src/components"),
 			$data: path.resolve("./src/data"),
