@@ -26,7 +26,13 @@
 
 <svelte:boundary onerror={(e) => console.error(e)}>
 	<div id="soot-publication">
-	<soot-publication bind:this={sootElement} slug="4be2a35c-952d-4090-ac9f-89879cf1bcf9"></soot-publication>
+	<soot-publication
+		bind:this={sootElement} slug="30aeca63-79f1-44b1-b7ca-f8c04eaa5f77"
+		introstartz="3"
+		introendz="20"
+	>
+
+	</soot-publication>
 	</div>
 </svelte:boundary>
 
