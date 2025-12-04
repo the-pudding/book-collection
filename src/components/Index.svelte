@@ -35,6 +35,7 @@
 		// Return a NEW array so Svelte detects changes
 		const result = [...relatedIds];
 		console.log('🔍 Returning related images:', result);
+
 		return result;
 	}
 
@@ -57,7 +58,7 @@
 		} else if (typeof instanceSelected === 'object' && instanceSelected.id) {
 			// Object from getInstanceDetails() - the id might be a SOOT UUID
 			// We need to extract the actual NYPL image ID from metadata
-			imageId = instanceSelected.id;
+			imageId = instanceSelected.editableMetadata.fileName.replace(".jpg", "");
 			console.log('Selected instance object:', instanceSelected);
 			console.log('Instance ID from SOOT:', imageId);
 			
@@ -92,7 +93,7 @@
 		// 		tagId: '0d467b2b-8583-4d25-9dbc-3221671a5c51'
 		// }`;
 
-		await sootElement?.expose?.executeSearch("1906");
+		await sootElement?.expose?.executeSearch("New?York$NY");
 		
 	}
 
@@ -216,9 +217,9 @@
 
 				
 				sootElement.addEventListener("selectInstance", async (event) => {
-					instanceSelected = await sootElement?.expose?.getInstanceDetails(event.detail.eventData.instanceId)
+					instanceSelected = await sootElement?.expose?.getInstanceDetails(event.detail.eventData.instanceId);
 					console.log(instanceSelected)
-					// showModal = true;
+					showModal = true;
 				}
 			)	
 			});
@@ -292,12 +293,12 @@
 		</div>
 	{/if}
 
+
 	<div class="{showModal ? 'show' : 'hide'}">
 		<Modal bind:showModal {instanceSelected} {relatedImageIds} {sootElement} />
 	</div>
 
-
-	<div id="soot-publication" class="{showModal ? 'hide' : 'show'}">
+	<div id="soot-publication" class="{showModal ? 'soot-publication-hide' : 'soot-publication-show'}">
 		<soot-publication
 			bind:this={sootElement}
 			slug="c0a2119c-fbde-4195-84d1-54168f98af48"
@@ -313,13 +314,19 @@
 				<!-- <button style="top: 0; position:fixed; z-index: 10000000;" class="modal-button" on:click={showModal = true}>Show Modal</button> -->
 				<button class="filter-button" on:click={filter}>Filter</button>					
 			</div>
-			<div slot="focusview">	
+			<div slot="focusview">
+
 			</div>	  
 		</soot-publication>
 	</div>
 </svelte:boundary>
 
 <style>
+	.soot-publication-hide {
+		visibility: hidden;
+	}
+	.soot-publication-show {
+	}
 	.hide {
 		display: none;
 	}
