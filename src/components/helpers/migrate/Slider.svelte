@@ -27,91 +27,170 @@ Usage:
 	import { setContext, onMount } from "svelte";
 	import { writable } from "svelte/store";
 
-	export let direction = "horizontal";
-	export let duration = "500ms";
-	export let timing = "ease";
+	let {
+		direction = "horizontal",
+		duration = "500ms",
+		timing = "ease"
+	} = $props();
 
-	export let count = 0;
-	export let current = 0;
+	let count = $state(0);
+	let current = $state(0);
 
-	export const next = () => move(1);
-	export const prev = () => move(-1);
-	export const jump = (val) => move(val, true);
+	const next = () => move(1);
+	const prev = () => move(-1);
+	const jump = (val) => move(val, true);
 
-	let children = 0;
-	let index = 0;
-	let width;
-	let height;
-	let isInView = false;
+	let children = $state(0);
+	let index = $state(0);
+	let width = $state(0);
+	let height = $state(0);
+	let isInView = $state(false);
 	let sliderEl;
 	let translateEl;
-	let root;
 	let observer;
-
-	let _direction = writable();
-	let _width = writable();
-	let _height = writable();
-	let _current = writable();
-	let _count = writable();
+	
+	// Touch/swipe handling
+	let touchStartX = $state(0);
+	let touchStartY = $state(0);
+	let touchCurrentX = $state(0);
+	let touchCurrentY = $state(0);
+	let isDragging = $state(false);
+	let dragOffset = $state(0);
 
 	const move = (val, jump) => {
 		if (!isInView) return false;
 		const target = jump ? val : index + val;
 		index = Math.max(0, Math.min(children - 1, target));
 		current = index;
+		dragOffset = 0;
+	};
+	
+	// Touch/swipe handlers
+	const handleStart = (e) => {
+		const touch = e.touches?.[0] || e;
+		touchStartX = touch.clientX;
+		touchStartY = touch.clientY;
+		touchCurrentX = touch.clientX;
+		touchCurrentY = touch.clientY;
+		isDragging = true;
+		dragOffset = 0;
+	};
+	
+	const handleMove = (e) => {
+		if (!isDragging) return;
+		e.preventDefault();
+		const touch = e.touches?.[0] || e;
+		touchCurrentX = touch.clientX;
+		touchCurrentY = touch.clientY;
+		
+		if (direction === "horizontal") {
+			const deltaX = touchCurrentX - touchStartX;
+			const maxOffset = width * 0.3; // Allow 30% drag
+			dragOffset = Math.max(-maxOffset, Math.min(maxOffset, deltaX));
+		} else {
+			const deltaY = touchCurrentY - touchStartY;
+			const maxOffset = height * 0.3;
+			dragOffset = Math.max(-maxOffset, Math.min(maxOffset, deltaY));
+		}
+	};
+	
+	const handleEnd = () => {
+		if (!isDragging) return;
+		isDragging = false;
+		
+		const threshold = direction === "horizontal" ? width * 0.2 : height * 0.2;
+		
+		if (Math.abs(dragOffset) > threshold) {
+			if (dragOffset > 0 && index > 0) {
+				prev();
+			} else if (dragOffset < 0 && index < children - 1) {
+				next();
+			} else {
+				dragOffset = 0;
+			}
+		} else {
+			dragOffset = 0;
+		}
 	};
 
 	const onIntersect = (e) => {
 		isInView = e[0].isIntersecting;
 	};
 
-	$: w = direction === "horizontal" ? `${children * width}px` : "100%";
-	$: h = direction === "vertical" ? `${children * height}px` : "100%";
+	const w = $derived(direction === "horizontal" ? `${children * width}px` : "100%");
+	const h = $derived(direction === "vertical" ? `${children * height}px` : "100%");
 
-	$: x = direction === "horizontal" ? `${index * width * -1}px` : 0;
-	$: y = direction === "vertical" ? `${index * height * -1}px` : 0;
+	const baseX = $derived(index * width * -1);
+	const baseY = $derived(index * height * -1);
+	const x = $derived(direction === "horizontal" ? `${baseX + dragOffset}px` : 0);
+	const y = $derived(direction === "vertical" ? `${baseY + dragOffset}px` : 0);
 
-	$: sW = `width: ${w};`;
-	$: sH = `height: ${h};`;
-	$: sT = `transform: translate3d(${x}, ${y}, 0);`;
-	$: sTD = `transition-duration: ${duration};`;
-	$: sTTF = `transition-timing-function: ${timing};`;
-	$: customStyle = `${sW} ${sH} ${sT} ${sTD} ${sTTF}`;
+	const sW = $derived(`width: ${w};`);
+	const sH = $derived(`height: ${h};`);
+	const sT = $derived(`transform: translate3d(${x}, ${y}, 0);`);
+	const sTD = $derived(isDragging ? `transition-duration: 0ms;` : `transition-duration: ${duration};`);
+	const sTTF = $derived(`transition-timing-function: ${timing};`);
+	const customStyle = $derived(`${sW} ${sH} ${sT} ${sTD} ${sTTF}`);
 
-	// context
-	$: _direction.set(direction);
-	$: _width.set(width);
-	$: _height.set(height);
-	$: _current.set(current);
-	$: context = {
-		dir: _direction,
-		cur: _current,
-		w: _width,
-		h: _height,
-		count: _count
+	// context - use stores for compatibility with Slide component
+	const dirStore = writable(direction);
+	const curStore = writable(0);
+	const wStore = writable(0);
+	const hStore = writable(0);
+	const countStore = writable(0);
+	
+	// Update stores when state changes
+	$effect(() => {
+		dirStore.set(direction);
+	});
+	$effect(() => {
+		curStore.set(current);
+	});
+	$effect(() => {
+		wStore.set(width);
+	});
+	$effect(() => {
+		hStore.set(height);
+	});
+	$effect(() => {
+		countStore.set(count);
+	});
+	
+	const context = {
+		dir: dirStore,
+		cur: curStore,
+		w: wStore,
+		h: hStore,
+		count: countStore
 	};
-	$: setContext("Slider", context);
+	setContext("Slider", context);
 
 	onMount(() => {
 		children = translateEl.children.length;
 		count = children;
-		_count.set(count);
 		observer = new IntersectionObserver(onIntersect, {
 			root: null,
 			rootMargin: "-1px"
 		});
 		observer.observe(sliderEl);
-		height = height;
-		width = width;
 	});
 </script>
 
 <section
-	aria-label="carousel"
 	class="slider {direction}"
 	bind:this={sliderEl}
 	bind:clientWidth={width}
 	bind:clientHeight={height}
+	ontouchstart={handleStart}
+	ontouchmove={handleMove}
+	ontouchend={handleEnd}
+	onmousedown={handleStart}
+	onmousemove={handleMove}
+	onmouseup={handleEnd}
+	onmouseleave={handleEnd}
+	style="touch-action: {direction === 'horizontal' ? 'pan-x' : 'pan-y'}; user-select: none; cursor: {isDragging ? 'grabbing' : 'grab'};"
+	tabindex="0"
+	aria-label="carousel"
 >
 	<div class="slides" bind:this={translateEl} style={customStyle}>
 		<slot />

@@ -3,12 +3,12 @@
 	import canTab from "$actions/canTab.js";
 	const { dir, cur, w, h, count } = getContext("Slider");
 
-	export let index;
+	let { index } = $props();
 
-	$: width = $dir === "horizontal" ? `${$w}px` : "100%";
-	$: height = $dir === "vertical" ? `${$h}px` : "100%";
-	$: visible = index === $cur;
-	$: disable = !visible;
+	const width = $derived($dir === "horizontal" ? `${$w}px` : "100%");
+	const height = $derived($dir === "vertical" ? `${$h}px` : "100%");
+	const visible = $derived(index === $cur);
+	const disable = $derived(!visible);
 </script>
 
 <div
