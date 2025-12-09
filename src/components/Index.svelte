@@ -3,9 +3,11 @@
 	import { browser } from "$app/environment";
 	import Modal from "$components/Modal.svelte";
 	import loadCsv from "../utils/loadCsv";
+	import metaData from "$data/metadata.csv"
 
 
 	let sootElement;
+	let metadataLookup = {};
 	let currentLayout = null;
 	let autocompletes = [];
 	let lastSearchText = null;
@@ -13,6 +15,8 @@
 	let showAutocompletes = false;
 	let showModal = $state(false);
 	let instanceSelected = $state(null);
+	let citiesList = $state(null);
+	let activeFilter = $state(null); // Track the currently selected filter
 
 	let menuData = $state(null);
 	let menuDataLoaded = $state(false);
@@ -28,24 +32,17 @@
 	 */
 	function getRelatedImageIds(imageId){
 
-		console.log('🔍 Getting related images for:', imageId);
 		const menuId = imageIdToMenuId.get(String(imageId));
-		console.log('🔍 menuId:', menuId);
 		const relatedIds = menuIdToImageIds.get(menuId) || [];
 		// Return a NEW array so Svelte detects changes
 		const result = [...relatedIds];
-		console.log('🔍 Returning related images:', result);
-
-		return result;
+		return [result, metadataLookup[imageId]];
 	}
 
 	// Reactive: Get related images for the currently selected instance
 	let relatedImageIds = $derived.by(() => {
-		console.log('🔄 relatedImageIds $derived.by triggered, instanceSelected:', instanceSelected);
 		if (!instanceSelected) {
-			console.log('No instance selected, using default image ID: 1603597');
 			const defaultRelated = []; //getRelatedImageIds("1603597");
-			console.log('Default related images:', defaultRelated);
 			return defaultRelated;
 		}
 		
@@ -80,7 +77,7 @@
 		console.log('📦 Index: relatedImageIds updated:', relatedImageIds);
 	});
 
-	async function filter(){
+	async function filter(location, label){
 		// showModal = true;
 		// const autocompletes = await sootElement?.expose?.getAutocompletions("tag");
 		// console.log(autocompletes)
@@ -93,36 +90,92 @@
 		// 		tagId: '0d467b2b-8583-4d25-9dbc-3221671a5c51'
 		// }`;
 
-		await sootElement?.expose?.executeSearch("New?York$NY");
+		console.log('Filtering for:', location);
 		
+		// Set active filter
+		activeFilter = { raw: location, label: label };
+
+		await sootElement?.expose?.executeSearch(location);
+		
+	}
+
+	async function clearFilter() {
+		activeFilter = null;
+		// Reset to default view or clear search
+		const views = await sootElement?.expose?.getViews();
+		console.log('getViews', views);
+		if (views && views.length > 0) {
+			sootElement?.expose?.setActiveView(views[0].id);
+		}
 	}
 
 	onMount(async () => {
 		await import("soot-webcomponents");
 
+		
+
 		if (browser) {
 			(async () => {
 				try {
-					menuData = await loadCsv("/menu-map.csv");
+					menuData = await loadCsv("data/menu-map.csv");
 					console.log('🔍 menuData:', menuData);
+						
+					if (Array.isArray(metaData)) {
+						// Create a unique list of locations from metaData using a Map to dedup by raw location string
+						if (Array.isArray(metaData)) {
+							const locationsMap = new Map();
+							metaData.forEach(row => {
+								if (row.location && row.location.trim() !== '') {
+									const rawLocation = row.location.trim();
+									const formattedLocation = rawLocation.replace(/\$|\?/g, match => match === '$' ? ', ' : ' ');
+									locationsMap.set(rawLocation, [rawLocation, formattedLocation]);
+								}
+							});
+							
+							// Convert Map values to array
+							citiesList = Array.from(locationsMap.values());
+						}
+						metaData.forEach(row => {
+							if (row.filename) {
+								const key = row.filename.replace(/\.jpg$/i, "");
+								metadataLookup[key] = row;
+
+							}
+						});
+					}
+
+					console.log('🔍 metaDataLookup:', metadataLookup);
+
 					
 					// Build index structures for quick lookup
 					const imageToMenu = new Map();
 					const menuToImages = new Map();
 					
+					if (menuData.length > 0) {
+						console.log('📄 CSV Columns:', Object.keys(menuData[0]));
+					}
+
 					menuData.forEach(row => {
 						const menuId = String(row.menu_id);
 						const imageId = String(row.image_id);
+						// Try to find page number column (page, page_number, order, etc.)
+						const page = parseInt(row.page || row.page_number || row.order || 0);
 						
 						// Map image_id -> menu_id
 						imageToMenu.set(imageId, menuId);
 						
-						// Map menu_id -> array of image_ids
+						// Map menu_id -> array of objects temporarily
 						if (!menuToImages.has(menuId)) {
 							menuToImages.set(menuId, []);
 						}
-						menuToImages.get(menuId).push(imageId);
+						menuToImages.get(menuId).push({ id: imageId, page });
 					});
+
+					// Sort by page number and extract IDs
+					for (const [menuId, images] of menuToImages) {
+						images.sort((a, b) => a.page - b.page);
+						menuToImages.set(menuId, images.map(img => img.id));
+					}
 					
 					imageIdToMenuId = imageToMenu;
 					menuIdToImageIds = menuToImages;
@@ -139,6 +192,15 @@
 			})();
 
 			sootElement.addEventListener('loadComplete', async (e) => {
+
+
+// 				type
+// : 
+// "SAVED_VIEW"
+// viewId
+// : 
+// "1fb5eb36-a820-4eda-a525-7a4445d6196c"
+
 				console.log('✨ SOOT space loaded!', e.detail);
 				console.log('📋 expose methods available:', Object.keys(sootElement?.expose || {}));
 				console.log(sootElement.expose.getAutocompletions())
@@ -294,8 +356,8 @@
 	{/if}
 
 
-	<div class="{showModal ? 'show' : 'hide'}">
-		<Modal bind:showModal {instanceSelected} {relatedImageIds} {sootElement} />
+	<div class="modal-container {showModal ? 'show-modal' : 'hide-modal'}">
+		<Modal bind:showModal {instanceSelected} relatedMetadata={relatedImageIds[1]} relatedImageIds={relatedImageIds[0]} {sootElement} />
 	</div>
 
 	<div id="soot-publication" class="{showModal ? 'soot-publication-hide' : 'soot-publication-show'}">
@@ -304,15 +366,29 @@
 			slug="c0a2119c-fbde-4195-84d1-54168f98af48"
 		>
 			<div slot="viewslist">
-				<button style="position:fixed; z-index: 10000000;" on:click={() => {
+				<!-- <button style="position:fixed; z-index: 10000000;" on:click={() => {
 					showModal = false;
 					sootElement?.expose?.deselectInstance();
 				}}>
 					Close focus view
-				</button>
+				</button> -->
 			
 				<!-- <button style="top: 0; position:fixed; z-index: 10000000;" class="modal-button" on:click={showModal = true}>Show Modal</button> -->
-				<button class="filter-button" on:click={filter}>Filter</button>					
+				{#if citiesList}
+					<div class="filter-container">
+						{#if activeFilter}
+							<!-- Show active filter with X button -->
+							<button class="filter-button active-filter" onclick={clearFilter}>
+								{activeFilter.label} <span class="clear-x">×</span>
+							</button>
+						{:else}
+							<!-- Show all filter buttons -->
+							{#each citiesList as city}
+								<button class="filter-button" onclick={() => filter(city[0], city[1])}>{city[1]}</button>
+							{/each}
+						{/if}
+					</div>
+				{/if}
 			</div>
 			<div slot="focusview">
 
@@ -322,28 +398,67 @@
 </svelte:boundary>
 
 <style>
+	.filter-container {
+		position: absolute;
+		top: 0;
+		left: 0;
+		display: flex;
+		flex-direction: column;
+		gap: 0px;
+		height: 100px;
+		overflow-y: scroll;
+	}
+
+	.filter-container button {
+		cursor: pointer;
+		width: 200px;
+		font-size: 12px;
+		padding: 0;
+		text-align: left;
+		margin: 0;
+	}
+
+	.filter-button.active-filter {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		background-color: #333;
+		color: white;
+		padding: 4px 8px;
+		border-radius: 4px;
+	}
+
+	.clear-x {
+		font-size: 16px;
+		font-weight: bold;
+		margin-left: 8px;
+		cursor: pointer;
+	}
+
+	.clear-x:hover {
+		color: #ff6666;
+	}
 	.soot-publication-hide {
-		visibility: hidden;
+		/* visibility: hidden; */
 	}
 	.soot-publication-show {
 	}
 	.hide {
 		display: none;
 	}
-	.filter-button {
-		position: fixed;
-		top: 0;
-		right: 0;
-		z-index: 1000;
+	.hide-modal {
+		/* visibility: hidden; */
 	}
 	.modal-container {
-		position: fixed;
-		top: 0;
-		left: 0;
-		width: 100%;
-		height: 100%;
+		transform: translate(-100%,0);
+		transition: transform .2s ease-in-out;
+		transition-delay: .0s;		
+		position: relative;
+    	z-index: 10000000;
+
 	}
-	.modal-container.show {
-		display: block;
+	.modal-container.show-modal {
+		/* visibility: visible; */
+		transform: translate(0,0);
 	}
 </style>

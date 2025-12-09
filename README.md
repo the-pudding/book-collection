@@ -1,4 +1,6 @@
 
+re-run analyze-restaurant-info.js -> update-metadata-from-analysis.js
+
 popular restaurants
 city
 familairty score - with present day

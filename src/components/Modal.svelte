@@ -1,15 +1,23 @@
 <script>
 	import { Deck } from '@deck.gl/core';
-	import { IconLayer } from '@deck.gl/layers';
+	import { BitmapLayer } from '@deck.gl/layers';
 	import { OrthographicView } from '@deck.gl/core';
 
 	let sliderEl; // component binding
 	let deckContainer;
 	let deck;
 
-    let { instanceSelected, relatedImageIds, showModal = $bindable(), sootElement } = $props();
+    let { instanceSelected, relatedImageIds, showModal = $bindable(), relatedMetadata, sootElement } = $props();
     
-    console.log('Modal props received:', { instanceSelected, relatedImageIds, showModal });
+    // Log when props change (must be in $effect to react to changes)
+    $effect(() => {
+        console.log('Modal props received:', { 
+            instanceSelected, 
+            relatedImageIds, 
+            showModal, 
+            relatedMetadata 
+        });
+    });
     
     function closeModal() {
         console.log('closeModal')
@@ -18,144 +26,192 @@
     }
 	
 
-	// Initialize deck once when container is ready
+	// Initialize and update deck instance when dependencies change
 	$effect(() => {
-		if (!deckContainer) return;
+		console.log('🔄 Effect triggered - Container:', !!deckContainer, 'Images:', relatedImageIds?.length);
 		
-		console.log('🎬 Initializing Deck.gl container');
-		
-		deck = new Deck({
-			parent: deckContainer,
-			initialViewState: {
-				target: [0, 0, 0],
-				zoom: 0,
-				minZoom: -2,
-				maxZoom: 5,
-				rotationX: 0,
-				rotationOrbit: 0
-			},
-			controller: true,
-			views: new OrthographicView(),
-			layers: [], // Start with empty layers
-			onLoad: () => {
-				console.log('✅ Deck.gl loaded successfully');
-			},
-			onError: (error) => {
-				console.error('❌ Deck.gl error:', error);
-			}
+		if (!deckContainer || !relatedImageIds || relatedImageIds.length === 0) {
+			console.log('⏳ Waiting for container or images...');
+			return;
+		}
+
+		// Clean up previous instance first (this forces a true reset)
+		if (deck) {
+			console.log('🧹 Cleaning up previous deck instance...');
+			deck.finalize();
+			deck = null;
+		}
+
+		console.log('✅ Fetching info for', relatedImageIds.length, 'images');
+
+		// Fetch dimensions first
+		Promise.all(relatedImageIds.map(id => getImageInfo(id))).then(imageInfos => {
+			// Check if we're still mounted
+			if (!deckContainer) return;
+
+			const size = 1600;
+			const spacing = 50;
+
+			const layers = imageInfos.map((info, index) => {
+				const width = size;
+				const height = size / info.aspectRatio;
+				const xCenter = index * (size + spacing);
+				
+				return new BitmapLayer({
+					id: `bitmap-${info.imageId}-${Date.now()}`,
+					image: `https://iiif.nypl.org/iiif/3/${info.imageId}/full/^1600,/0/default.jpg`,
+					bounds: [
+						xCenter - width/2,  // left
+						height/2,           // bottom
+						xCenter + width/2,  // right
+						-height/2           // top
+					],
+					pickable: true,
+					parameters: {
+						depthTest: false
+					},
+					textureParameters: {
+						[0x2801]: 0x2601, // GL.LINEAR
+						[0x2800]: 0x2601, // GL.LINEAR
+						[0x2802]: 0x812F, // CLAMP_TO_EDGE
+						[0x2803]: 0x812F, // CLAMP_TO_EDGE
+					},
+					onHover: (event) => {
+						if (event.object) {
+							console.log('Hovering over:', info.imageId);
+						}
+					}
+				});
+			});
+
+			console.log('🏗️ Creating new Deck instance...');
+			
+			deck = new Deck({
+				parent: deckContainer,
+				initialViewState: {
+					target: [0, 0, 0],
+					zoom: -3,
+					minZoom: -5,
+					maxZoom: 5,
+					rotationX: 0,
+					rotationOrbit: 0
+				},
+				controller: true,
+				views: new OrthographicView(),
+				layers: layers,
+				onLoad: () => console.log('✅ Deck loaded'),
+				onError: (e) => console.error('❌ Deck error:', e)
+			});
 		});
 
-		console.log('Deck instance created');
-
-		// Cleanup when component unmounts
+		// Cleanup on unmount or dependency change
 		return () => {
-			console.log('🧹 Cleaning up deck instance');
 			if (deck) {
+				console.log('🧹 Finalizing deck on cleanup');
 				deck.finalize();
 				deck = null;
 			}
 		};
 	});
 
-	// Update layers when relatedImageIds changes
-	$effect(() => {
-		console.log('🔄 Layer update effect triggered');
-		console.log('  - deck exists:', !!deck);
-		console.log('  - relatedImageIds:', relatedImageIds);
-		
-		if (!deck || !relatedImageIds || relatedImageIds.length === 0) {
-			console.log('⏳ Waiting - deck or relatedImageIds not ready');
-			return;
+	// Fetch image dimensions from IIIF info.json
+	async function getImageInfo(imageId) {
+		try {
+			const res = await fetch(`https://iiif.nypl.org/iiif/3/${imageId}/info.json`);
+			const info = await res.json();
+			return {
+				imageId,
+				width: info.width,
+				height: info.height,
+				aspectRatio: info.width / info.height
+			};
+		} catch (error) {
+			console.error(`Failed to fetch info for ${imageId}:`, error);
+			return { imageId, width: 1000, height: 1000, aspectRatio: 1 }; // Fallback
 		}
-
-		console.log('✅ Creating IconLayer for', relatedImageIds.length, 'images');
-
-		const size = 1000;
-
-		// Create data for IconLayer - position images in 3D space
-		// Use 512x512 images to stay within WebGL texture limits
-		const iconData = relatedImageIds.map((imageId, index) => ({
-			imageId,
-			url: `https://iiif.nypl.org/iiif/3/${imageId}/full/1000,/0/default.jpg`,
-			position: [
-				(index - 1) * (size/2 + 1), // Spread horizontally
-				0, // Y position
-				0  // Z position
-			],
-			size: size/2
-		}));
-
-		console.log('  - Icon data:', iconData);
-
-		// Create NEW IconLayer with updated data - mask: false to show full-color images
-		const iconLayer = new IconLayer({
-			id: 'image-icons',
-			data: iconData,
-			getIcon: d => ({
-				url: d.url,
-				width: size,
-				height: size,
-				mask: false
-			}),
-			getPosition: d => d.position,
-			getSize: d => d.size,
-			getColor: [255, 255, 255, 255],
-			sizeUnits: 'common',
-			onHover: (info) => {
-				if (info.object) {
-					console.log('Hovering over:', info.object.imageId);
-				}
-			},
-			onIconError: (error) => {
-				console.error('Icon loading error:', error);
-			}
-		});
-
-		// Update deck with new layer
-		console.log('🔄 Updating deck layers...');
-		deck.setProps({ layers: [iconLayer] });
-		console.log('✅ Deck layers updated!');
-	});
+	}
 
 </script>
 
 <div class="modal">
-    <button class="close-button" onclick={closeModal}>Close</button>
-    <div class="deck-container" bind:this={deckContainer}></div>
+	<div class="info-container">
+		<button class="close-button" onclick={closeModal}>Back</button>
+		<div class="info-content">
+			<p><span class="title">{relatedMetadata?.title}</span></p>
+			<p><span class="location">{relatedMetadata?.location.replace("$", ", ").replace("?", " ")}</span> | <span class="year">Menu Year: {relatedMetadata?.year}</span></p>
+		</div>
+	</div>
+    <div class="deck-container" bind:this={deckContainer}>
+	</div>
 </div>
 
 <style>
+	.info-content p {
+		line-height: 1.1;
+		font-size: 16px;
+		margin: 0;
+	}
+	.info-content {
+		padding-left: 10px;
+	}
+	.title {
+		font-size: 16px;
+		font-weight: 600;
+		margin-right: 10px;
+	}
+	.location {
+		font-weight: 600;
+		margin-right: 5px;
+	}
+	.year, .location {
+		font-size: 14px;
+		opacity: 0.8;
+		font-family: var(--mono);
+	}
+	.info-container {
+		position: absolute;
+		top: 0;
+		left: 0;
+		background: #f7f7f7;
+		width: 100%;
+		height: 70px;
+		font-family: var(--sans);
+		display: flex;
+		align-items: center;
+		border-bottom: 1px solid #000;
+		
+	}
     .modal {
         position: fixed;
         top: 0;
         left: 0;
+		background-color: #f7f7f7;
         width: 100%;
         height: 100vh;
-        background-color: #FF0000;
-        z-index: 1000;
+        z-index: 1000000000000;
         pointer-events: all;
     }
 
     .deck-container {
         position: absolute;
-        top: 0;
+        top: 70px;
         left: 0;
         width: 100%;
-        height: 100%;
+        height: calc(100% - 70px);
     }
 
     .close-button {
-        position: absolute;
-        top: 20px;
-        right: 20px;
-        padding: 10px 20px;
         background-color: #333;
         color: white;
         border: none;
-        border-radius: 4px;
         cursor: pointer;
         font-size: 16px;
         z-index: 1001;
+		margin-right: 20px;
+		width: 100px;
+		margin: 0;
+		height: 100%;
+		border-radius: 0;
     }
 
     .close-button:hover {
