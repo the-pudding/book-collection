@@ -3,8 +3,10 @@
 	import { browser } from "$app/environment";
 	import Modal from "$components/Modal.svelte";
 	import loadCsv from "../utils/loadCsv";
-	import metaData from "$data/metadata.csv"
-
+	import metaData from "$data/metadata.csv";
+	import MapboxGeocoder from '@mapbox/mapbox-gl-geocoder';
+	import '@mapbox/mapbox-gl-geocoder/dist/mapbox-gl-geocoder.css';
+	import { Squirrel, Turtle, Bird, Brain } from "@lucide/svelte";
 
 	let sootElement;
 	let metadataLookup = {};
@@ -17,6 +19,8 @@
 	let instanceSelected = $state(null);
 	let citiesList = $state(null);
 	let activeFilter = $state(null); // Track the currently selected filter
+	let geocoderContainer;
+	let geocoder;
 
 	let menuData = $state(null);
 	let menuDataLoaded = $state(false);
@@ -24,6 +28,8 @@
 	// Index structures for quick lookup
 	let imageIdToMenuId = $state(new Map());
 	let menuIdToImageIds = $state(new Map());
+
+	let highlightedGeographies = ["NEW YORK, NY","DETROIT, MI", "BOSTON, MA", "CHICAGO, IL", "SAN FRANCISCO, CA", "LOS ANGELES, CA"];
 	
 	/**
 	 * Get all image_ids that share the same menu_id as the given image_id
@@ -77,6 +83,16 @@
 		console.log('📦 Index: relatedImageIds updated:', relatedImageIds);
 	});
 
+	// Initialize geocoder when container and citiesList are ready
+	$effect(() => {
+		if (geocoderContainer && citiesList && citiesList.length > 0) {
+			// Use setTimeout to ensure DOM is ready
+			setTimeout(() => {
+				initializeGeocoder(citiesList);
+			}, 100);
+		}
+	});
+
 	async function filter(location, label){
 		// showModal = true;
 		// const autocompletes = await sootElement?.expose?.getAutocompletions("tag");
@@ -109,6 +125,138 @@
 		}
 	}
 
+	function initializeGeocoder(cities) {
+		if (!geocoderContainer || !cities || cities.length === 0) {
+			console.log('⏳ Geocoder: Waiting for container or cities');
+			return;
+		}
+
+		// Clean up existing geocoder if any
+		if (geocoder) {
+			const geocoderElement = geocoderContainer.querySelector('.mapboxgl-ctrl-geocoder');
+			if (geocoderElement) {
+				geocoderElement.remove();
+			}
+			geocoder.off('result');
+		}
+		// Create local geocoder function for autocomplete
+		const localGeocoder = (query) => {
+			const queryLower = query.toLowerCase().trim();
+			console.log('🔍 Local geocoder query:', queryLower, '| Cities available:', cities.length);
+			
+			if (!queryLower) {
+				return [];
+			}
+
+			const matches = cities
+				.filter(city => {
+					const label = city[1].toLowerCase();
+					return label.includes(queryLower);
+				})
+				.slice(0, 5) // Limit to 5 results
+				.map(city => ({
+					type: 'Feature',
+					geometry: {
+						type: 'Point',
+						coordinates: [0, 0] // Dummy coordinates, not used
+					},
+					place_name: city[1],
+					properties: {
+						rawLocation: city[0],
+						formattedLocation: city[1]
+					}
+				}));
+
+			console.log('🔍 Local geocoder matches:', matches.length, '| Results:', matches.map(m => m.place_name));
+			return matches;
+		};
+
+		// Initialize Mapbox Geocoder with localGeocoder for autocomplete
+		// Set localGeocoderOnly to true to ONLY use local geocoder and exclude Mapbox API results
+		geocoder = new MapboxGeocoder({
+			accessToken: 'pk.eyJ1IjoiZG9jazQyNDIiLCJhIjoiY2xqc2g3N2o5MHAyMDNjdGhzM2V2cmR3NiJ9.3x1ManoY4deDkAGBuUMnSw', // Not needed when using only localGeocoder
+			localGeocoder: localGeocoder,
+			localGeocoderOnly: true, // ONLY use local geocoder, exclude all Mapbox API results
+			placeholder: 'Search cities, states...',
+			externalGeocoder: false, // Disable Mapbox geocoding API
+			marker: false,
+			zoom: 0,
+			minLength: 0, // Show suggestions immediately
+			limit: 5 // Limit number of suggestions
+		});
+
+		// Handle result selection
+		geocoder.on('result', (e) => {
+			const result = e.result;
+			console.log('✅ Geocoder result:', result);
+			if (result.properties) {
+				const rawLocation = result.properties.rawLocation;
+				const formattedLocation = result.properties.formattedLocation;
+				console.log('Geocoder selected:', rawLocation, formattedLocation);
+				filter(rawLocation, formattedLocation);
+			}
+		});
+
+		// Handle errors
+		geocoder.on('error', (e) => {
+			console.error('❌ Geocoder error:', e);
+		});
+
+		// Add geocoder to container
+		const geocoderElement = geocoder.onAdd();
+		geocoderContainer.appendChild(geocoderElement);
+		
+		// Create a Set of valid city names for quick lookup
+		const validCityNames = new Set(cities.map(city => city[1]));
+		
+		// Use MutationObserver to filter out invalid suggestions in real-time
+		const suggestionsContainer = geocoderElement.querySelector('.mapboxgl-ctrl-geocoder--suggestions');
+		if (suggestionsContainer) {
+			const observer = new MutationObserver(() => {
+				// Filter suggestions that don't match our local data
+				const suggestions = suggestionsContainer.querySelectorAll('.mapboxgl-ctrl-geocoder--suggestion');
+				suggestions.forEach(suggestion => {
+					const placeName = suggestion.textContent?.trim() || suggestion.innerText?.trim();
+					if (placeName && !validCityNames.has(placeName)) {
+						console.log('🚫 Removing invalid suggestion:', placeName);
+						suggestion.remove();
+					}
+				});
+			});
+			
+			observer.observe(suggestionsContainer, {
+				childList: true,
+				subtree: true
+			});
+		}
+		
+		// Also filter on results event as a backup
+		geocoder.on('results', (e) => {
+			if (e.results && Array.isArray(e.results)) {
+				const invalidCount = e.results.filter(result => {
+					const placeName = result.place_name;
+					return placeName && !validCityNames.has(placeName);
+				}).length;
+				
+				if (invalidCount > 0) {
+					console.log('🔍 Filtered out', invalidCount, 'invalid suggestions from results event');
+					// Remove invalid suggestions from DOM
+					setTimeout(() => {
+						const suggestions = geocoderElement.querySelectorAll('.mapboxgl-ctrl-geocoder--suggestion');
+						suggestions.forEach(suggestion => {
+							const placeName = suggestion.textContent?.trim() || suggestion.innerText?.trim();
+							if (placeName && !validCityNames.has(placeName)) {
+								suggestion.remove();
+							}
+						});
+					}, 10);
+				}
+			}
+		});
+		
+		console.log('✅ Geocoder initialized with', cities.length, 'cities');
+	}
+
 	onMount(async () => {
 		await import("soot-webcomponents");
 
@@ -134,6 +282,7 @@
 							
 							// Convert Map values to array
 							citiesList = Array.from(locationsMap.values());
+							// Geocoder will be initialized by $effect when container is ready
 						}
 						metaData.forEach(row => {
 							if (row.filename) {
@@ -361,10 +510,10 @@
 	</div>
 
 	<div id="soot-publication" class="{showModal ? 'soot-publication-hide' : 'soot-publication-show'}">
-		<soot-publication
-			bind:this={sootElement}
-			slug="c0a2119c-fbde-4195-84d1-54168f98af48"
-		>
+	<soot-publication
+		bind:this={sootElement}
+		slug="c0a2119c-fbde-4195-84d1-54168f98af48"
+	>
 			<div slot="viewslist">
 				<!-- <button style="position:fixed; z-index: 10000000;" on:click={() => {
 					showModal = false;
@@ -374,48 +523,138 @@
 				</button> -->
 			
 				<!-- <button style="top: 0; position:fixed; z-index: 10000000;" class="modal-button" on:click={showModal = true}>Show Modal</button> -->
-				{#if citiesList}
-					<div class="filter-container">
-						{#if activeFilter}
-							<!-- Show active filter with X button -->
-							<button class="filter-button active-filter" onclick={clearFilter}>
-								{activeFilter.label} <span class="clear-x">×</span>
-							</button>
-						{:else}
-							<!-- Show all filter buttons -->
-							{#each citiesList as city}
-								<button class="filter-button" onclick={() => filter(city[0], city[1])}>{city[1]}</button>
-							{/each}
-						{/if}
-					</div>
-				{/if}
+				<div class="geocoder-container" bind:this={geocoderContainer}>
+					{#if citiesList}
+						<div class="filter-container">
+							{#if activeFilter}
+								<!-- Show active filter with X button -->
+								<button class="filter-button active-filter" onclick={clearFilter}>
+									{activeFilter.label} <span class="clear-x">×</span>
+								</button>
+							{:else}
+								<!-- Show all filter buttons -->
+								{#each citiesList
+									// Sort by index in highlightedGeographies (preserves order from highlightedGeographies), non-matches come last
+									.slice()
+									.sort((a, b) => {
+										const idxA = highlightedGeographies.indexOf(a[1]);
+										const idxB = highlightedGeographies.indexOf(b[1]);
+										// Both in the highlights: preserve order
+										if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+										// Only a is in the highlights
+										if (idxA !== -1) return -1;
+										// Only b is in the highlights
+										if (idxB !== -1) return 1;
+										// Neither is highlighted, sort alphabetically
+										return a[1].localeCompare(b[1]);
+									}) 
+									.filter(city => highlightedGeographies.includes(city[1]))
+								as city}
+									<button class="filter-button" onclick={() => filter(city[0], city[1])}>{city[1]}</button>
+								{/each}
+								<div class="divider"></div>
+								<button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}>Pretenious</button>
+								<button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}>Casual</button>
+								<div class="divider"></div>
+								<button style="background: #32641d;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}>Historic Dishes</button>
+								<button style="background: #32641d;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}>Uncommon Meats</button>
+								<button style="background: #000;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}><Squirrel size="20" strokeWidth="1.5" color="#ffcf24"/></button>
+								<button style="background: #000;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}><Turtle size="20" strokeWidth="1.5" color="#92e936"/></button>
+								<button style="background: #000;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}><Bird size="20" strokeWidth="1.5" color="#D2F2FF"/></button>
+								<button style="background: #000;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}><Brain size="20" strokeWidth="1.5" color="#F2D2FF"/></button>
+
+								
+							{/if}
+
+						</div>
+					{/if}
+
+
+				</div>
 			</div>
 			<div slot="focusview">
 
 			</div>	  
-		</soot-publication>
-	</div>
+	</soot-publication>
+</div>
 </svelte:boundary>
 
 <style>
-	.filter-container {
+	.divider {
+		width: 100%;
+		height: 1px;
+		background: black;
+		opacity: .2;
+	}
+	.geocoder-container {
 		position: absolute;
-		top: 0;
-		left: 0;
+		top: 10px;
+		left: 10px;
+		width: 300px;
+		z-index: 10000001;
 		display: flex;
-		flex-direction: column;
-		gap: 0px;
-		height: 100px;
-		overflow-y: scroll;
+		flex-direction: column-reverse;
+		gap: 10px;
+		-webkit-backdrop-filter: blur(2rem);
+		backdrop-filter: blur(2rem);
+		background-color: #bababa33;
+		border-radius: .2rem;
+		clip-path: inset(0px round .2rem);
+		padding: 1rem;
+	}
+
+	.geocoder-container :global(.mapboxgl-ctrl-geocoder) {
+		width: 100%;
+		/* box-shadow: 0 2px 4px rgba(0,0,0,0.2); */
+	}
+
+	.geocoder-container :global(.mapboxgl-ctrl-geocoder input) {
+		font-family: 'Atlas Typewriter';
+		font-weight: 300;
+		-webkit-font-smoothing: antialiased;
+	}
+
+	.geocoder-container :global(.mapboxgl-ctrl-geocoder input::placeholder) {
+		font-family: 'Atlas Grotesk';
+		font-weight: 400;
+		font-size: 16px;
+		color: #666;
+		letter-spacing: -0.02em;
+	}
+
+	.geocoder-container :global(.mapboxgl-ctrl-geocoder--suggestions) {
+		z-index: 10000002 !important;
+		max-height: 300px;
+		overflow-y: auto;
+	}
+
+	.geocoder-container :global(.mapboxgl-ctrl-geocoder--suggestion) {
+		cursor: pointer;
+	}
+
+	.filter-container {
+		display: flex;
+		flex-direction: row;
+		gap: 5px;
+		width: 100%;
+		flex-wrap: wrap;
+		
 	}
 
 	.filter-container button {
 		cursor: pointer;
-		width: 200px;
 		font-size: 12px;
 		padding: 0;
 		text-align: left;
 		margin: 0;
+		background: #3e3e3e;
+		padding: 4px 8px;
+		color: #fff;
+		text-transform: uppercase;
+		font-family: 'Atlas Typewriter';
+		font-weight: 300;
+		-webkit-font-smoothing: antialiased;
+		border-radius: 3px;
 	}
 
 	.filter-button.active-filter {

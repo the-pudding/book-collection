@@ -1,5 +1,17 @@
 
-re-run analyze-restaurant-info.js -> update-metadata-from-analysis.js
+# get structured title data for restaurants
+analyze-restaurant-info.js
+
+# parse location data to city and state for auto complete
+analyze-restaurant-geo.js
+
+# update metadata csv file for upload to soot
+update-metadata-from-analysis.js
+
+
+seperate out state and city, and country
+
+
 
 popular restaurants
 city

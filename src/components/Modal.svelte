@@ -2,10 +2,12 @@
 	import { Deck } from '@deck.gl/core';
 	import { BitmapLayer } from '@deck.gl/layers';
 	import { OrthographicView } from '@deck.gl/core';
+	import { ChevronDown, ChevronUp } from '@lucide/svelte';
 
 	let sliderEl; // component binding
 	let deckContainer;
 	let deck;
+	let sidebarExpanded = $state(false);
 
     let { instanceSelected, relatedImageIds, showModal = $bindable(), relatedMetadata, sootElement } = $props();
     
@@ -24,6 +26,10 @@
         showModal = false;
         // sootElement?.expose?.deselectInstance();
     }
+
+	function toggleSidebar() {
+		sidebarExpanded = !sidebarExpanded;
+	}
 	
 
 	// Initialize and update deck instance when dependencies change
@@ -138,7 +144,20 @@
 		<button class="close-button" onclick={closeModal}>Back</button>
 		<div class="info-content">
 			<p><span class="title">{relatedMetadata?.title}</span></p>
-			<p><span class="location">{relatedMetadata?.location.replace("$", ", ").replace("?", " ")}</span> | <span class="year">Menu Year: {relatedMetadata?.year}</span></p>
+			<p><span class="location">{relatedMetadata?.location.replace(/\$|\?/g, match => match === '$' ? ', ' : ' ')}</span>{relatedMetadata?.location ? ' | ' : ''}<span class="year">Menu Year: {relatedMetadata?.year}</span></p>
+		</div>
+	</div>
+	<div class="sidebar" class:expanded={sidebarExpanded}>
+		<p>The menu presents a stark contrast between very simple, everyday dishes (Oatmeal, Frankfurter Wurst, Salted Mackerel) and an exceptionally luxurious offering from the era, 'Filet v. Schildkrote m. Truffeln' (Fillet of Turtle with Truffles). This blend is characteristic of a high-class establishment, such as a grand hotel or ocean liner, catering to the diverse tastes of an affluent clientele. While many items are basic, the presence of a true haute cuisine dish featuring rare and expensive ingredients like turtle and truffles signifies a highly capable kitchen and elevates the menu to a fine dining level.</p>
+		<div class="black-scroll" onclick={toggleSidebar}>
+			<p>{sidebarExpanded ? 'SHRINK' : 'EXPAND'}</p>
+			<span>
+				{#if sidebarExpanded}
+					<ChevronUp size="15" color="#000" />
+				{:else}
+					<ChevronDown size="15" color="#000" />
+				{/if}
+			</span>
 		</div>
 	</div>
     <div class="deck-container" bind:this={deckContainer}>
@@ -146,6 +165,66 @@
 </div>
 
 <style>
+	.sidebar p {
+		padding: 10px;
+		background: #f7f7f7;
+		font-size: 14px;
+		font-family: 'Atlas Grotesk';
+		margin: 0;
+		height: 100%;
+	}
+	.expanded .black-scroll {
+		top: 550px;
+	}
+	.black-scroll {
+		background: #aaa;
+		height: 25px;
+		width: 100%;
+		position: fixed;
+		top: 248px;
+		left: 0;
+		width: 290px;
+		z-index: 1001;
+		border: 1px solid #000;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		font-family: 'Atlas Grotesk';
+		text-align: center;
+		cursor: pointer;
+		border-top: none;
+	}
+	.black-scroll span {
+		transform: translate(0,1px);
+	}
+	.black-scroll p {
+		color: #000;
+		padding: 0;
+		margin-right: 5px;
+		background: none;
+		border: none;
+		margin: 0;
+		font-size: 12px;
+		font-weight: 600;
+		line-height: 25px;
+		height: 25px;
+		font-family: 'Atlas Typewriter';
+	}
+	.sidebar {
+		position: absolute;
+		left: 0;
+		top: 69px;
+		width: 290px;
+		z-index: 1000;
+		height: 180px;
+		border: 1px solid black;
+		overflow: scroll;
+		padding: 0px;
+	}
+
+	.sidebar.expanded {
+		height: 500px;
+	}
 	.info-content p {
 		line-height: 1.1;
 		font-size: 16px;
