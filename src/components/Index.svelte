@@ -83,6 +83,14 @@
 		console.log('📦 Index: relatedImageIds updated:', relatedImageIds);
 	});
 
+	// Expose sootElement to window for console access
+	$effect(() => {
+		if (browser && sootElement) {
+			window.sootElement = sootElement;
+			console.log('✅ sootElement exposed to window. Access it with: window.sootElement or just sootElement');
+		}
+	});
+
 	// Initialize geocoder when container and citiesList are ready
 	$effect(() => {
 		if (geocoderContainer && citiesList && citiesList.length > 0) {
@@ -556,7 +564,7 @@
 								<button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}>Pretenious</button>
 								<button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}>Casual</button>
 								<div class="divider"></div>
-								<button style="background: #32641d;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}>Historic Dishes</button>
+								<button style="background: #32641d;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}>Obscure Dishes</button>
 								<button style="background: #32641d;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}>Uncommon Meats</button>
 								<button style="background: #000;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}><Squirrel size="20" strokeWidth="1.5" color="#ffcf24"/></button>
 								<button style="background: #000;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}><Turtle size="20" strokeWidth="1.5" color="#92e936"/></button>
