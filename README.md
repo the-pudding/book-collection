@@ -1,9 +1,18 @@
+run fanciness anlaysis, trying to get it to define items.
+run familiarity anlaysis: trying to get to define items.
+
+get cool restaurants on there...like waldorf
+offensive things??
+but what if that's the point...like chinese food that's old? or takes on other culture's food? like italian? first mention of pizza? or collactions--where became more popular as a luxury item...like lobster?
+coinsider changing to pre 1950—has a sort of charm to just having that data...
+
+
 decide on images for soot:
 - try removing germany...or maybe just one's with a geography?
-- remove anything less than 1960s
+# remove anything less than 1960s -> "image_ids_after_1959.json"
 - remove anything that doesn't have high-res
 - could also just do first page of menu with menu content (so less repeating?)
-- remove wines
+- remove primarily wines
 
 
 
@@ -32,6 +41,7 @@ analyze-restaurant-geo.js
 # update metadata csv file for upload to soot
 update-metadata-from-analysis.js
 update-metadata-from-menu-years.js
+update-metadata-from-animals.js
 
 #
 --

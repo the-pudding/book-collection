@@ -18,6 +18,7 @@
 	let showModal = $state(false);
 	let instanceSelected = $state(null);
 	let citiesList = $state(null);
+	let statesList = $state(null);
 	let activeFilter = $state(null); // Track the currently selected filter
 	let geocoderContainer;
 	let geocoder;
@@ -29,7 +30,7 @@
 	let imageIdToMenuId = $state(new Map());
 	let menuIdToImageIds = $state(new Map());
 
-	let highlightedGeographies = ["NEW YORK, NY","DETROIT, MI", "BOSTON, MA", "CHICAGO, IL", "SAN FRANCISCO, CA", "LOS ANGELES, CA"];
+	let highlightedGeographies = ["New York, NY","Detroit, MI", "Boston, MA", "Chicago, IL", "San Francisco, CA", "Los Angeles, CA"];
 	
 	/**
 	 * Get all image_ids that share the same menu_id as the given image_id
@@ -93,13 +94,23 @@
 
 	// Initialize geocoder when container and citiesList are ready
 	$effect(() => {
-		if (geocoderContainer && citiesList && citiesList.length > 0) {
+		if (geocoderContainer && citiesList && citiesList.length > 0 && statesList && statesList.length > 0) {
+
+			console.log(statesList)
 			// Use setTimeout to ensure DOM is ready
 			setTimeout(() => {
-				initializeGeocoder(citiesList);
+				initializeGeocoder(citiesList, statesList);
 			}, 100);
 		}
 	});
+
+	async function animalFilter(animal){
+		console.log('Animal Filter:', animal);
+		activeFilter = { raw: animal, label: animal };
+
+		await sootElement?.expose?.executeSearch(animal);
+
+	}
 
 	async function filter(location, label){
 		// showModal = true;
@@ -133,9 +144,12 @@
 		}
 	}
 
-	function initializeGeocoder(cities) {
-		if (!geocoderContainer || !cities || cities.length === 0) {
+	function initializeGeocoder(cities, states) {
+		if (!geocoderContainer || !cities || cities.length === 0 || !states || states.length === 0) {
 			console.log('⏳ Geocoder: Waiting for container or cities');
+			console.log(cities.length)
+			console.log(states.length)
+			console.log('geocoderContainer', geocoderContainer)
 			return;
 		}
 
@@ -150,18 +164,17 @@
 		// Create local geocoder function for autocomplete
 		const localGeocoder = (query) => {
 			const queryLower = query.toLowerCase().trim();
-			console.log('🔍 Local geocoder query:', queryLower, '| Cities available:', cities.length);
 			
 			if (!queryLower) {
 				return [];
 			}
 
-			const matches = cities
+			let matches = cities
 				.filter(city => {
 					const label = city[1].toLowerCase();
 					return label.includes(queryLower);
 				})
-				.slice(0, 5) // Limit to 5 results
+				.slice(0, 3) // Limit to 5 results
 				.map(city => ({
 					type: 'Feature',
 					geometry: {
@@ -174,6 +187,30 @@
 						formattedLocation: city[1]
 					}
 				}));
+
+			// Now, also append state matches (states is [value, label] array)
+			let stateMatches = [];
+			if (states && Array.isArray(states)) {
+				stateMatches = states
+					.filter(state => {
+						const label = state[1].toLowerCase();
+						return label.includes(queryLower);
+					})
+					.slice(0, 2) // Limit to 3 state results to balance with cities
+					.map(state => ({
+						type: 'Feature',
+						geometry: {
+							type: 'Point',
+							coordinates: [0, 0] // Dummy coordinates, not used
+						},
+						place_name: state[1],
+						properties: {
+							rawLocation: state[0],
+							formattedLocation: state[1]
+						}
+					}));
+			}
+			matches = matches.concat(stateMatches);
 
 			console.log('🔍 Local geocoder matches:', matches.length, '| Results:', matches.map(m => m.place_name));
 			return matches;
@@ -274,23 +311,28 @@
 			(async () => {
 				try {
 					menuData = await loadCsv("data/menu-map.csv");
-					console.log('🔍 menuData:', menuData);
 						
 					if (Array.isArray(metaData)) {
 						// Create a unique list of locations from metaData using a Map to dedup by raw location string
 						if (Array.isArray(metaData)) {
 							const locationsMap = new Map();
+							const locationsStateMap = new Map();
 							metaData.forEach(row => {
-								if (row.location && row.location.trim() !== '') {
-									const rawLocation = row.location.trim();
+								if (row.city && row.city.trim() !== '') {
+									const rawLocation = row.city.trim();
 									const formattedLocation = rawLocation.replace(/\$|\?/g, match => match === '$' ? ', ' : ' ');
 									locationsMap.set(rawLocation, [rawLocation, formattedLocation]);
+								}
+								if(row.state && row.state.trim() !== '') {
+									const rawLocation = row.state.trim();
+									const formattedLocation = rawLocation.replace(/\$|\?/g, match => match === '$' ? ', ' : ' ');
+									locationsStateMap.set(rawLocation, [rawLocation, formattedLocation]);
 								}
 							});
 							
 							// Convert Map values to array
 							citiesList = Array.from(locationsMap.values());
-							// Geocoder will be initialized by $effect when container is ready
+							statesList = Array.from(locationsStateMap.values());
 						}
 						metaData.forEach(row => {
 							if (row.filename) {
@@ -301,17 +343,10 @@
 						});
 					}
 
-					console.log('🔍 metaDataLookup:', metadataLookup);
-
 					
 					// Build index structures for quick lookup
 					const imageToMenu = new Map();
 					const menuToImages = new Map();
-					
-					if (menuData.length > 0) {
-						console.log('📄 CSV Columns:', Object.keys(menuData[0]));
-					}
-
 					menuData.forEach(row => {
 						const menuId = String(row.menu_id);
 						const imageId = String(row.image_id);
@@ -336,12 +371,7 @@
 					
 					imageIdToMenuId = imageToMenu;
 					menuIdToImageIds = menuToImages;
-					
-					console.log('📊 Menu index built:', {
-						totalImages: imageToMenu.size,
-						totalMenus: menuToImages.size
-					});
-					
+										
 					menuDataLoaded = true;
 				} catch (error) {
 					console.error('❌ Error loading menu data:', error);
@@ -358,23 +388,52 @@
 // : 
 // "1fb5eb36-a820-4eda-a525-7a4445d6196c"
 
-				console.log('✨ SOOT space loaded!', e.detail);
-				console.log('📋 expose methods available:', Object.keys(sootElement?.expose || {}));
-				console.log(sootElement.expose.getAutocompletions())
-
 				// Enable scroll-to-zoom behavior
 				// The controls are in a nested Vue component, so we need to traverse the tree
 				setTimeout(() => {
 					try {
 						let controls = null;
 						
-						// Method 1: Try to find the child component with controls
-						const findControls = (vnode) => {
-							if (!vnode) return null;
-							
+					// Helper function to safely get component name
+					const getComponentName = (instance) => {
+						try {
+							if (!instance?.type) return 'UnknownComponent';
+							const type = instance.type;
+							// Try various ways to get the name, handling Symbols
+							if (typeof type.name === 'string') return type.name;
+							if (typeof type.__name === 'string') return type.__name;
+							if (typeof type === 'function' && type.name) return type.name;
+							return 'UnknownComponent';
+						} catch (e) {
+							return 'UnknownComponent';
+						}
+					};
+
+					// Helper function to safely stringify path
+					const stringifyPath = (path) => {
+						try {
+							return path.map(item => {
+								if (typeof item === 'string') return item;
+								if (typeof item === 'symbol') return item.toString();
+								return String(item);
+							}).join(' → ');
+						} catch (e) {
+							return path.length.toString() + ' levels deep';
+						}
+					};
+
+					// Method 1: Try to find the child component with controls
+					const findControls = (vnode, path = [], visited = new WeakSet()) => {
+						if (!vnode || visited.has(vnode)) return null;
+						visited.add(vnode);
+						
+						try {
 							// Check this node's component instance
 							if (vnode.component) {
 								const instance = vnode.component;
+								const componentName = getComponentName(instance);
+								const currentPath = [...path, componentName];
+								
 								
 								// Check setupState for controls
 								if (instance.setupState?.controls) {
@@ -382,7 +441,6 @@
 									// Check if it's a ref
 									const actualCtrl = ctrl.value || ctrl;
 									if (actualCtrl?.smoothZoomMode !== undefined) {
-										console.log('Found controls in component setupState');
 										return actualCtrl;
 									}
 								}
@@ -392,33 +450,228 @@
 									const ctrl = instance.ctx.controls;
 									const actualCtrl = ctrl.value || ctrl;
 									if (actualCtrl?.smoothZoomMode !== undefined) {
-										console.log('Found controls in component ctx');
 										return actualCtrl;
 									}
 								}
 								
-								// Recursively search children
-								if (instance.subTree) {
-									const result = findControls(instance.subTree);
-									if (result) return result;
+								// Check all properties for controls (production builds might use different structure)
+								for (const prop of ['setupState', 'ctx', 'exposed', 'exposeProxy', 'data', 'props']) {
+									try {
+										const obj = instance[prop];
+										if (obj && typeof obj === 'object') {
+											// Check for controls property
+											if (obj.controls) {
+												const ctrl = obj.controls;
+												const actualCtrl = ctrl.value || ctrl;
+												if (actualCtrl?.smoothZoomMode !== undefined) {
+													return actualCtrl;
+												}
+											}
+											// Check if the object itself is controls
+											if (obj.smoothZoomMode !== undefined) {
+												return obj;
+											}
+										}
+									} catch (e) {
+										// Skip errors
+									}
+								}
+								
+								// Recursively search children - try multiple paths
+								const childPaths = ['subTree', 'sub', 'children', 'child'];
+								for (const childPath of childPaths) {
+									if (instance[childPath]) {
+										const result = findControls(instance[childPath], currentPath, visited);
+										if (result) return result;
+									}
 								}
 							}
 							
 							// Check children array
 							if (vnode.children && Array.isArray(vnode.children)) {
-								for (const child of vnode.children) {
-									const result = findControls(child);
-									if (result) return result;
+								for (let i = 0; i < vnode.children.length; i++) {
+									const child = vnode.children[i];
+									try {
+										const childType = getComponentName(child?.component) || (typeof child?.type === 'string' ? child.type : `Child[${i}]`);
+										const result = findControls(child, [...path, `child[${i}]`], visited);
+										if (result) {
+											return result;
+										}
+									} catch (e) {
+										// Silently continue if we can't process this child
+										console.log(`⚠️ Could not process child ${i}`);
+									}
 								}
 							}
 							
-							return null;
+							// Also check if vnode itself has component property at root level
+							if (vnode.component) {
+								// Already handled above, but also check nested structures
+								const nestedPaths = ['component', 'instance', 'parent'];
+								for (const nestedPath of nestedPaths) {
+									if (vnode[nestedPath] && vnode[nestedPath] !== vnode.component) {
+										const result = findControls({ component: vnode[nestedPath] }, path, visited);
+										if (result) return result;
+									}
+								}
+							}
+						} catch (e) {
+							// If there's an error, just continue searching
+							console.warn('⚠️ Error processing vnode:', e);
+						}
+						
+						return null;
+					};
+						
+						// Multiple methods to find controls (work in both dev and production)
+						// Helper to get all possible Vue instance entry points
+						const getVueInstances = () => {
+							const instances = [];
+							// Try various ways Vue might expose the instance
+							const possiblePaths = [
+								sootElement._instance,
+								sootElement.__vueParentComponent,
+								sootElement.__vue_app__,
+								sootElement.$,
+								sootElement._vnode?.component,
+								sootElement.__vnode?.component
+							];
+							
+							for (const inst of possiblePaths) {
+								if (inst) instances.push(inst);
+							}
+							
+							// Also check shadowRoot
+							if (sootElement.shadowRoot) {
+								const walker = document.createTreeWalker(
+									sootElement.shadowRoot,
+									NodeFilter.SHOW_ELEMENT
+								);
+								
+								let node;
+								while (node = walker.nextNode()) {
+									const vueInstances = [
+										node.__vueParentComponent,
+										node._instance,
+										node.__vue_app__
+									].filter(Boolean);
+									instances.push(...vueInstances);
+								}
+							}
+							
+							return instances;
 						};
 						
-						// Start search from _instance
-						if (sootElement._instance) {
-							console.log('🔍 Searching component tree for controls...');
+						const vueInstances = getVueInstances();
+						
+						// Method 1: Try _instance.subTree (dev mode)
+						if (sootElement._instance?.subTree) {
 							controls = findControls(sootElement._instance.subTree);
+						}
+						
+						// Method 2: Try all found Vue instances
+						if (!controls && vueInstances.length > 0) {
+							for (let i = 0; i < vueInstances.length && !controls; i++) {
+								const inst = vueInstances[i];
+								console.log(`  Trying instance ${i}...`);
+								// Try subTree if available
+								if (inst.subTree) {
+									controls = findControls(inst.subTree);
+								}
+								// Try the instance itself as a vnode
+								if (!controls) {
+									controls = findControls({ component: inst });
+								}
+							}
+						}
+						
+						// Method 3: Try accessing through shadowRoot
+						if (!controls && sootElement.shadowRoot) {
+							console.log('🔍 Method 3: Searching through shadowRoot...');
+							// Look for Vue components in shadow DOM
+							const allElements = sootElement.shadowRoot.querySelectorAll('*');
+							for (const el of allElements) {
+								if (el.__vueParentComponent) {
+									const result = findControls(el.__vueParentComponent);
+									if (result) {
+										controls = result;
+										break;
+									}
+								}
+								if (el._instance) {
+									const result = findControls(el._instance.subTree);
+									if (result) {
+										controls = result;
+										break;
+									}
+								}
+							}
+						}
+						
+						// Method 4: Deep search through all possible Vue instance properties
+						if (!controls) {
+							console.log('🔍 Method 4: Deep search through all properties...');
+							const searchAllProperties = (obj, depth = 0, maxDepth = 5) => {
+								if (depth > maxDepth || !obj || typeof obj !== 'object') return null;
+								
+								// Check if this object has controls
+								if (obj.controls && obj.smoothZoomMode !== undefined) {
+									console.log('✅ Found controls in object at depth', depth);
+									return obj.controls;
+								}
+								if (obj.smoothZoomMode !== undefined && typeof obj.setSmoothZoomMode === 'function') {
+									console.log('✅ Found controls object at depth', depth);
+									return obj;
+								}
+								
+								// Search recursively
+								for (const key in obj) {
+									try {
+										if (key === '__vnode' || key === 'subTree' || key === 'component' || key === 'setupState' || key === 'ctx') {
+											const result = searchAllProperties(obj[key], depth + 1, maxDepth);
+											if (result) return result;
+										}
+									} catch (e) {
+										// Skip circular references
+									}
+								}
+								return null;
+							};
+							
+							// Try searching from various entry points
+							const entryPoints = [
+								sootElement._instance,
+								sootElement.__vueParentComponent,
+								sootElement.shadowRoot?.querySelector('*')?.__vueParentComponent
+							].filter(Boolean);
+							
+							for (const entry of entryPoints) {
+								controls = searchAllProperties(entry);
+								if (controls) break;
+							}
+						}
+						
+						// Method 5: Try accessing through expose API (if it exists)
+						if (!controls && sootElement.expose) {
+							console.log('🔍 Method 5: Checking expose API...');
+							try {
+								// Some Vue components expose internal state
+								const exposeKeys = Object.keys(sootElement.expose);
+								console.log('Expose keys:', exposeKeys);
+								// Check if there's a controls or getControls method
+								for (const key of exposeKeys) {
+									if (key.toLowerCase().includes('control')) {
+										const val = sootElement.expose[key];
+										if (val && val.smoothZoomMode !== undefined) {
+											controls = val;
+											console.log('✅ Found controls in expose:', key);
+											break;
+										}
+									}
+								}
+							} catch (e) {
+								console.warn('⚠️ Error checking expose:', e);
+							}
 						}
 						
 						if (controls) {
@@ -427,6 +680,7 @@
 							console.log('Controls:', controls);
 						} else {
 							console.warn('⚠️ Could not find controls in component tree');
+							console.log('💡 Available properties on sootElement:', Object.keys(sootElement));
 							console.log('💡 Try using Ctrl/Cmd+Scroll to zoom as a workaround');
 						}
 					} catch (error) {
@@ -447,7 +701,6 @@
 
 			sootElement.addEventListener('changeLayout', (e) => {
 				console.group('🔄 Layout Changed');
-				console.log('Timestamp:', new Date().toLocaleTimeString());
 				
 				const layout = e.detail.eventData.layout;
 				const triggerType = e.detail.eventData.triggerType;
@@ -520,7 +773,7 @@
 	<div id="soot-publication" class="{showModal ? 'soot-publication-hide' : 'soot-publication-show'}">
 	<soot-publication
 		bind:this={sootElement}
-		slug="c0a2119c-fbde-4195-84d1-54168f98af48"
+		slug="b21da04d-96b2-47aa-b5c2-4f9c71e4072f"
 	>
 			<div slot="viewslist">
 				<!-- <button style="position:fixed; z-index: 10000000;" on:click={() => {
@@ -565,10 +818,10 @@
 								<button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}>Casual</button>
 								<div class="divider"></div>
 								<button style="background: #32641d;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}>Obscure Dishes</button>
-								<button style="background: #32641d;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}>Uncommon Meats</button>
-								<button style="background: #000;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}><Squirrel size="20" strokeWidth="1.5" color="#ffcf24"/></button>
-								<button style="background: #000;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}><Turtle size="20" strokeWidth="1.5" color="#92e936"/></button>
-								<button style="background: #000;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}><Bird size="20" strokeWidth="1.5" color="#D2F2FF"/></button>
+								<button style="background: #32641d;" class="filter-button fancy-button" onclick={() => animalFilter('rare')}>Uncommon Meats</button>
+								<button style="background: #000;" class="filter-button fancy-button" onclick={() => animalFilter('squirrel')}><Squirrel size="20" strokeWidth="1.5" color="#ffcf24"/></button>
+								<button style="background: #000;" class="filter-button fancy-button" onclick={() => animalFilter('turtle')}><Turtle size="20" strokeWidth="1.5" color="#92e936"/></button>
+								<button style="background: #000;" class="filter-button fancy-button" onclick={() => animalFilter('birdie')}><Bird size="20" strokeWidth="1.5" color="#D2F2FF"/></button>
 								<button style="background: #000;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}><Brain size="20" strokeWidth="1.5" color="#F2D2FF"/></button>
 
 								

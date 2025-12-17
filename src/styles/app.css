@@ -47,6 +47,10 @@
 	}
 } */
 
+.mapboxgl-ctrl-geocoder .suggestions {
+	position: relative;
+}
+
 .mapboxgl-ctrl-geocoder--powered-by {
 	display: none !important;
 }

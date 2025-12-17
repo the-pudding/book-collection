@@ -62,6 +62,8 @@
 				const width = size;
 				const height = size / info.aspectRatio;
 				const xCenter = index * (size + spacing);
+
+				console.log("creating bitmap layer for ",`https://iiif.nypl.org/iiif/3/${info.imageId}/full/^1600,/0/default.jpg`)
 				
 				return new BitmapLayer({
 					id: `bitmap-${info.imageId}-${Date.now()}`,
@@ -144,7 +146,13 @@
 		<button class="close-button" onclick={closeModal}>Back</button>
 		<div class="info-content">
 			<p><span class="title">{relatedMetadata?.title}</span></p>
-			<p><span class="location">{relatedMetadata?.location.replace(/\$|\?/g, match => match === '$' ? ', ' : ' ')}</span>{relatedMetadata?.location ? ' | ' : ''}<span class="year">Menu Year: {relatedMetadata?.year}</span></p>
+			<p>
+				{#if relatedMetadata?.city}
+				<span class="location">{relatedMetadata?.city?.replace(/\$|\?/g, match => match === '$' ? ', ' : ' ')}</span>
+				 | 
+				{/if}
+				<span class="year">Menu Year: {relatedMetadata?.year}</span>
+			</p>
 		</div>
 	</div>
 	<div class="sidebar" class:expanded={sidebarExpanded}>
