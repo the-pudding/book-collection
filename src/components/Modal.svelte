@@ -9,7 +9,7 @@
 	let deck;
 	let sidebarExpanded = $state(false);
 
-    let { instanceSelected, relatedImageIds, showModal = $bindable(), relatedMetadata, sootElement } = $props();
+    let { aspectRatioMap,instanceSelected, relatedImageIds, showModal = $bindable(), relatedMetadata, sootElement } = $props();
     
     // Log when props change (must be in $effect to react to changes)
     $effect(() => {
@@ -17,7 +17,8 @@
             instanceSelected, 
             relatedImageIds, 
             showModal, 
-            relatedMetadata 
+            relatedMetadata,
+            aspectRatioMap: aspectRatioMap ? `Map with ${aspectRatioMap.size} entries` : null
         });
     });
     
@@ -34,10 +35,10 @@
 
 	// Initialize and update deck instance when dependencies change
 	$effect(() => {
-		console.log('🔄 Effect triggered - Container:', !!deckContainer, 'Images:', relatedImageIds?.length);
+		console.log('🔄 Effect triggered - Container:', !!deckContainer, 'Images:', relatedImageIds?.length, 'AspectRatioMap:', aspectRatioMap?.size);
 		
-		if (!deckContainer || !relatedImageIds || relatedImageIds.length === 0) {
-			console.log('⏳ Waiting for container or images...');
+		if (!deckContainer || !relatedImageIds || relatedImageIds.length === 0 || !aspectRatioMap) {
+			console.log('⏳ Waiting for container, images, or aspectRatioMap...');
 			return;
 		}
 
@@ -48,68 +49,87 @@
 			deck = null;
 		}
 
-		console.log('✅ Fetching info for', relatedImageIds.length, 'images');
+		console.log('✅ Getting image info from aspectRatioMap for', relatedImageIds.length, 'images');
 
-		// Fetch dimensions first
-		Promise.all(relatedImageIds.map(id => getImageInfo(id))).then(imageInfos => {
-			// Check if we're still mounted
-			if (!deckContainer) return;
+		// Get dimensions from aspectRatioMap
+		const imageInfos = relatedImageIds.map(imageId => {
+			const imageData = aspectRatioMap.get(String(imageId));
+			if (imageData) {
+				return {
+					imageId,
+					width: imageData.width,
+					height: imageData.height,
+					aspectRatio: imageData.aspectRatio
+				};
+			} else {
+				// Fallback if image not found in map
+				console.warn(`⚠️ Image ${imageId} not found in aspectRatioMap, using fallback`);
+				return {
+					imageId,
+					width: 1000,
+					height: 1000,
+					aspectRatio: 1
+				};
+			}
+		});
 
-			const size = 1600;
-			const spacing = 50;
+		// Check if we're still mounted
+		if (!deckContainer) return;
 
-			const layers = imageInfos.map((info, index) => {
-				const width = size;
-				const height = size / info.aspectRatio;
-				const xCenter = index * (size + spacing);
+		const size = 1600;
+		const spacing = 50;
 
-				console.log("creating bitmap layer for ",`https://iiif.nypl.org/iiif/3/${info.imageId}/full/^1600,/0/default.jpg`)
-				
-				return new BitmapLayer({
-					id: `bitmap-${info.imageId}-${Date.now()}`,
-					image: `https://iiif.nypl.org/iiif/3/${info.imageId}/full/^1600,/0/default.jpg`,
-					bounds: [
-						xCenter - width/2,  // left
-						height/2,           // bottom
-						xCenter + width/2,  // right
-						-height/2           // top
-					],
-					pickable: true,
-					parameters: {
-						depthTest: false
-					},
-					textureParameters: {
-						[0x2801]: 0x2601, // GL.LINEAR
-						[0x2800]: 0x2601, // GL.LINEAR
-						[0x2802]: 0x812F, // CLAMP_TO_EDGE
-						[0x2803]: 0x812F, // CLAMP_TO_EDGE
-					},
-					onHover: (event) => {
-						if (event.object) {
-							console.log('Hovering over:', info.imageId);
-						}
-					}
-				});
-			});
+		const layers = imageInfos.map((info, index) => {
+			const width = size;
+			const height = size / info.aspectRatio;
+			const xCenter = index * (size + spacing);
 
-			console.log('🏗️ Creating new Deck instance...');
+			// console.log("creating bitmap layer for ",`https://iiif.nypl.org/iiif/3/${info.imageId}/full/^1600,/0/default.jpg`)
 			
-			deck = new Deck({
-				parent: deckContainer,
-				initialViewState: {
-					target: [0, 0, 0],
-					zoom: -3,
-					minZoom: -5,
-					maxZoom: 5,
-					rotationX: 0,
-					rotationOrbit: 0
+			return new BitmapLayer({
+				id: `bitmap-${info.imageId}-${Date.now()}`,
+				image: `https://s3.us-east-1.amazonaws.com/pudding.cool/menu-images/${info.imageId}.jpg`,
+				bounds: [
+					xCenter - width/2,  // left
+					height/2,           // bottom
+					xCenter + width/2,  // right
+					-height/2           // top
+				],
+				pickable: true,
+				parameters: {
+					depthTest: false
 				},
-				controller: true,
-				views: new OrthographicView(),
-				layers: layers,
-				onLoad: () => console.log('✅ Deck loaded'),
-				onError: (e) => console.error('❌ Deck error:', e)
+				textureParameters: {
+					[0x2801]: 0x2601, // GL.LINEAR
+					[0x2800]: 0x2601, // GL.LINEAR
+					[0x2802]: 0x812F, // CLAMP_TO_EDGE
+					[0x2803]: 0x812F, // CLAMP_TO_EDGE
+				},
+				onHover: (event) => {
+					if (event.object) {
+						console.log('Hovering over:', info.imageId);
+					}
+				}
 			});
+		});
+
+		console.log('🏗️ Creating new Deck instance...');
+		
+		deck = new Deck({
+			parent: deckContainer,
+			initialViewState: {
+				target: [0, 0, 0],
+				zoom: -3,
+				minZoom: -5,
+				maxZoom: 5,
+				rotationX: 0,
+				rotationOrbit: 0
+			},
+			controller: true,
+			views: new OrthographicView(),
+			layers: layers,
+			onLoad: () => console.log('✅ Deck loaded'),
+			onError: (e) => console.error('❌ Deck error:', e)
 		});
 
 		// Cleanup on unmount or dependency change
@@ -122,22 +142,6 @@
 		};
 	});
 
-	// Fetch image dimensions from IIIF info.json
-	async function getImageInfo(imageId) {
-		try {
-			const res = await fetch(`https://iiif.nypl.org/iiif/3/${imageId}/info.json`);
-			const info = await res.json();
-			return {
-				imageId,
-				width: info.width,
-				height: info.height,
-				aspectRatio: info.width / info.height
-			};
-		} catch (error) {
-			console.error(`Failed to fetch info for ${imageId}:`, error);
-			return { imageId, width: 1000, height: 1000, aspectRatio: 1 }; // Fallback
-		}
-	}
 
 </script>
 

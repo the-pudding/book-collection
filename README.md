@@ -1,3 +1,8 @@
+*****need to analyze menu items for each page. create list of related image ids map -- pull image items using existing csv...this will be a map of items to the parent image_id...run anakysis and explanatino on that..
+
+create json of all files and sizes in the external hard-drive -- these are used to exclude image_ids from the related image pull and also have aspect ratios, but tehse are also in menupage.csv (and in static/data/menu-map.csv)
+
+
 run fanciness anlaysis, trying to get it to define items.
 run familiarity anlaysis: trying to get to define items.
 

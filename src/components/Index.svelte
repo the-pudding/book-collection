@@ -23,6 +23,8 @@
 	let geocoderContainer;
 	let geocoder;
 
+	let aspectRatioMap = $state(new Map());
+
 	let menuData = $state(null);
 	let menuDataLoaded = $state(false);
 	
@@ -361,14 +363,26 @@
 							menuToImages.set(menuId, []);
 						}
 						menuToImages.get(menuId).push({ id: imageId, page });
+						
 					});
+
+
 
 					// Sort by page number and extract IDs
 					for (const [menuId, images] of menuToImages) {
 						images.sort((a, b) => a.page - b.page);
 						menuToImages.set(menuId, images.map(img => img.id));
 					}
-					
+
+
+					menuData.forEach(row => {
+						const imageId = String(row.image_id);
+						const width = Number(row.width);
+						const height = Number(row.height);
+						const aspectRatio = width / height;
+						aspectRatioMap.set(imageId, { width, height, aspectRatio });
+					});
+
 					imageIdToMenuId = imageToMenu;
 					menuIdToImageIds = menuToImages;
 										
@@ -767,7 +781,7 @@
 
 
 	<div class="modal-container {showModal ? 'show-modal' : 'hide-modal'}">
-		<Modal bind:showModal {instanceSelected} relatedMetadata={relatedImageIds[1]} relatedImageIds={relatedImageIds[0]} {sootElement} />
+		<Modal bind:showModal {instanceSelected} relatedMetadata={relatedImageIds[1]} relatedImageIds={relatedImageIds[0]} {sootElement} aspectRatioMap={aspectRatioMap}/>
 	</div>
 
 	<div id="soot-publication" class="{showModal ? 'soot-publication-hide' : 'soot-publication-show'}">
