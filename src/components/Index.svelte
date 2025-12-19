@@ -97,8 +97,6 @@
 	// Initialize geocoder when container and citiesList are ready
 	$effect(() => {
 		if (geocoderContainer && citiesList && citiesList.length > 0 && statesList && statesList.length > 0) {
-
-			console.log(statesList)
 			// Use setTimeout to ensure DOM is ready
 			setTimeout(() => {
 				initializeGeocoder(citiesList, statesList);
@@ -107,7 +105,6 @@
 	});
 
 	async function animalFilter(animal){
-		console.log('Animal Filter:', animal);
 		activeFilter = { raw: animal, label: animal };
 
 		await sootElement?.expose?.executeSearch(animal);
@@ -126,8 +123,6 @@
 		// 		propertyId: '8b5df9fc-8e50-4d23-a6cb-4df765173d40',
 		// 		tagId: '0d467b2b-8583-4d25-9dbc-3221671a5c51'
 		// }`;
-
-		console.log('Filtering for:', location);
 		
 		// Set active filter
 		activeFilter = { raw: location, label: label };
@@ -140,7 +135,6 @@
 		activeFilter = null;
 		// Reset to default view or clear search
 		const views = await sootElement?.expose?.getViews();
-		console.log('getViews', views);
 		if (views && views.length > 0) {
 			sootElement?.expose?.setActiveView(views[0].id);
 		}
@@ -148,10 +142,6 @@
 
 	function initializeGeocoder(cities, states) {
 		if (!geocoderContainer || !cities || cities.length === 0 || !states || states.length === 0) {
-			console.log('⏳ Geocoder: Waiting for container or cities');
-			console.log(cities.length)
-			console.log(states.length)
-			console.log('geocoderContainer', geocoderContainer)
 			return;
 		}
 
@@ -214,7 +204,6 @@
 			}
 			matches = matches.concat(stateMatches);
 
-			console.log('🔍 Local geocoder matches:', matches.length, '| Results:', matches.map(m => m.place_name));
 			return matches;
 		};
 
@@ -235,11 +224,9 @@
 		// Handle result selection
 		geocoder.on('result', (e) => {
 			const result = e.result;
-			console.log('✅ Geocoder result:', result);
 			if (result.properties) {
 				const rawLocation = result.properties.rawLocation;
 				const formattedLocation = result.properties.formattedLocation;
-				console.log('Geocoder selected:', rawLocation, formattedLocation);
 				filter(rawLocation, formattedLocation);
 			}
 		});
@@ -265,7 +252,6 @@
 				suggestions.forEach(suggestion => {
 					const placeName = suggestion.textContent?.trim() || suggestion.innerText?.trim();
 					if (placeName && !validCityNames.has(placeName)) {
-						console.log('🚫 Removing invalid suggestion:', placeName);
 						suggestion.remove();
 					}
 				});
@@ -286,7 +272,6 @@
 				}).length;
 				
 				if (invalidCount > 0) {
-					console.log('🔍 Filtered out', invalidCount, 'invalid suggestions from results event');
 					// Remove invalid suggestions from DOM
 					setTimeout(() => {
 						const suggestions = geocoderElement.querySelectorAll('.mapboxgl-ctrl-geocoder--suggestion');
@@ -301,7 +286,6 @@
 			}
 		});
 		
-		console.log('✅ Geocoder initialized with', cities.length, 'cities');
 	}
 
 	onMount(async () => {
@@ -513,7 +497,6 @@
 										}
 									} catch (e) {
 										// Silently continue if we can't process this child
-										console.log(`⚠️ Could not process child ${i}`);
 									}
 								}
 							}
@@ -587,7 +570,6 @@
 						if (!controls && vueInstances.length > 0) {
 							for (let i = 0; i < vueInstances.length && !controls; i++) {
 								const inst = vueInstances[i];
-								console.log(`  Trying instance ${i}...`);
 								// Try subTree if available
 								if (inst.subTree) {
 									controls = findControls(inst.subTree);
@@ -690,6 +672,12 @@
 						
 						if (controls) {
 							controls.smoothZoomMode = 'SCROLL_TO_ZOOM';
+							controls.zoomSpeed = 10;
+							controls.panSpeed = .7;
+							controls.scrollToZoomSpeed = 0.00030;
+							controls.dynamicDampingFactor = .0005;
+							controls.dynamicDampingFactorWhilePanning = 0;
+							controls.dynamicDampingFactorWhileWheelPanning = 0;
 							console.log('✅ Zoom-on-scroll enabled!');
 							console.log('Controls:', controls);
 						} else {
@@ -830,15 +818,15 @@
 								<div class="divider"></div>
 								<button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}>Pretenious</button>
 								<button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}>Casual</button>
+								<button style="background: #5a1d64;" class="filter-button fancy-button" onclick={() => animalFilter('plaza')}>Plaza Hotel</button>
+								<button style="background: #5a1d64;" class="filter-button fancy-button" onclick={() => animalFilter('waldorf')}>Waldorf-Astoria</button>
+								<button style="background: #5a1d64;" class="filter-button fancy-button" onclick={() => animalFilter('delmonicos')}>Delmonico's</button>
 								<div class="divider"></div>
 								<button style="background: #32641d;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}>Obscure Dishes</button>
 								<button style="background: #32641d;" class="filter-button fancy-button" onclick={() => animalFilter('rare')}>Uncommon Meats</button>
 								<button style="background: #000;" class="filter-button fancy-button" onclick={() => animalFilter('squirrel')}><Squirrel size="20" strokeWidth="1.5" color="#ffcf24"/></button>
 								<button style="background: #000;" class="filter-button fancy-button" onclick={() => animalFilter('turtle')}><Turtle size="20" strokeWidth="1.5" color="#92e936"/></button>
 								<button style="background: #000;" class="filter-button fancy-button" onclick={() => animalFilter('birdie')}><Bird size="20" strokeWidth="1.5" color="#D2F2FF"/></button>
-								<button style="background: #000;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}><Brain size="20" strokeWidth="1.5" color="#F2D2FF"/></button>
-
-								
 							{/if}
 
 						</div>
