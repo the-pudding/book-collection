@@ -34,6 +34,10 @@
 
 	let highlightedGeographies = ["New York, NY","Detroit, MI", "Boston, MA", "Chicago, IL", "San Francisco, CA", "Los Angeles, CA"];
 	
+	// Category labels with screen positions
+	let screenLabels = $state([]);
+	let labelsVisible = $state(true);
+	
 	/**
 	 * Get all image_ids that share the same menu_id as the given image_id
 	 * @param {string|number} imageId - The image_id to look up
@@ -291,8 +295,6 @@
 	onMount(async () => {
 		await import("soot-webcomponents");
 
-		
-
 		if (browser) {
 			(async () => {
 				try {
@@ -378,19 +380,17 @@
 
 			sootElement.addEventListener('loadComplete', async (e) => {
 
+				const views = await sootElement?.expose?.getViews();
+						console.log(views)
 
-// 				type
-// : 
-// "SAVED_VIEW"
-// viewId
-// : 
-// "1fb5eb36-a820-4eda-a525-7a4445d6196c"
+						if (views && views.length > 0) {
+							sootElement?.expose?.setActiveView(views[0].id);
+						}
 
-				// Enable scroll-to-zoom behavior
-				// The controls are in a nested Vue component, so we need to traverse the tree
 				setTimeout(() => {
 					try {
 						let controls = null;
+
 						
 					// Helper function to safely get component name
 					const getComponentName = (instance) => {
@@ -690,13 +690,206 @@
 					}
 				}, 500); // Longer delay to ensure component tree is fully built
 
-				
+				setTimeout(() => {
+					try {
+						console.group('🏷️ Setting up category labels...');
+						
+						// Use _instance which is available in both dev and production
+						const rootComp = sootElement._instance;
+						if (!rootComp) {
+							console.warn('Could not find root Vue component (_instance)');
+							console.groupEnd();
+							return;
+						}
+						
+						// Navigate: SootPublication -> SceneManager -> MainComponent
+						const sceneManager = rootComp.subTree?.children?.[0]?.component;
+						if (!sceneManager) {
+							console.warn('Could not find SceneManager');
+							console.groupEnd();
+							return;
+						}
+						
+						const mainComp = sceneManager.subTree?.children?.[3]?.component;
+						if (!mainComp) {
+							// Try alternative paths - the index might differ
+							const children = sceneManager.subTree?.children || [];
+							let found = null;
+							for (let i = 0; i < children.length; i++) {
+								const child = children[i]?.component;
+								if (child?.ctx?.compactSpaceScene) {
+									found = child;
+									break;
+								}
+							}
+							if (!found) {
+								console.warn('Could not find MainComponent');
+								console.groupEnd();
+								return;
+							}
+						}
+						
+						// In production, data is in props; in dev, it's in ctx
+						const actualMainComp = mainComp || sceneManager.subTree?.children?.find(c => c?.component)?.component;
+						const dataSource = actualMainComp?.ctx?.compactSpaceScene ? actualMainComp.ctx : actualMainComp?.props;
+						
+						if (!dataSource?.compactSpaceScene) {
+							console.warn('Could not find compactSpaceScene in ctx or props');
+							console.groupEnd();
+							return;
+						}
+						
+						const css = dataSource.compactSpaceScene;
+						const renderTarget = dataSource.renderTarget;
+						const controls = dataSource.controls;
+						const space = css.space;
+						const camera = renderTarget?.threeCamera;
+						const canvas = sootElement.shadowRoot.querySelector('canvas');
+						
+						if (!camera || !canvas || !controls) {
+							console.warn('Missing camera, canvas, or controls');
+							console.groupEnd();
+							return;
+						}
+						
+						// Get Vector3 class from Three.js
+						const Vector3 = camera.position.constructor;
+						
+						// Get the CATEGORY view's property ID
+						const views = space.collections.Views;
+						const categoryView = Object.values(views).find(v => v.parameters?.type === 'CATEGORY');
+						
+						if (!categoryView) {
+							console.warn('No CATEGORY view found');
+							console.groupEnd();
+							return;
+						}
+						
+						const propertyId = categoryView.parameters.property;
+						const instances = space.collections.Instances;
+						const propertyTemplate = space.root.instanceMetadataTemplate?.propertyTemplates?.[propertyId];
+						const tags = propertyTemplate?.typeDefinition?.orderedTags || [];
+						
+						// Create tag lookup
+						const tagIdToName = {};
+						tags.forEach(t => tagIdToName[t.id] = t.displayName);
+						
+						// Pre-compute which instances belong to which category
+						const categoryInstances = {};
+						for (const [instanceId, instance] of Object.entries(instances)) {
+							const yearValue = instance.metadata?.propertyValues?.[propertyId];
+							if (!yearValue) continue;
+							const tagIds = yearValue.tags || (yearValue.tag ? [yearValue.tag] : []);
+							for (const tagId of tagIds) {
+								const tagName = tagIdToName[tagId];
+								if (!tagName) continue;
+								if (!categoryInstances[tagName]) {
+									categoryInstances[tagName] = { tagId, instanceIds: [] };
+								}
+								categoryInstances[tagName].instanceIds.push(instanceId);
+							}
+						}
+						
+						console.log(`Found ${Object.keys(categoryInstances).length} categories`);
+						
+						// Function to compute world positions
+						function computeWorldPositions() {
+							const labels = [];
+							
+							for (const [label, data] of Object.entries(categoryInstances)) {
+								const positions = [];
+								for (const instanceId of data.instanceIds) {
+									const pos = css.getInstancePosition(instanceId);
+									if (pos) positions.push({ x: pos.x, y: pos.y, z: pos.z });
+								}
+								
+								if (positions.length === 0) continue;
+								
+								const center = {
+									x: positions.reduce((sum, p) => sum + p.x, 0) / positions.length,
+									y: positions.reduce((sum, p) => sum + p.y, 0) / positions.length,
+									z: positions.reduce((sum, p) => sum + p.z, 0) / positions.length
+								};
+								
+								const minY = Math.min(...positions.map(p => p.y));
+								const maxY = Math.max(...positions.map(p => p.y));
+								
+								labels.push({
+									label,
+									tagId: data.tagId,
+									worldPos: { x: center.x, y: maxY + 1.5, z: center.z },
+									center,
+									instanceCount: positions.length
+								});
+							}
+							
+							// Sort by year
+							labels.sort((a, b) => parseInt(a.label) - parseInt(b.label));
+							return labels;
+						}
+						
+						// Compute initial world positions
+						let worldLabels = computeWorldPositions();
+						console.log('Computed world positions for', worldLabels.length, 'categories');
+						
+						// Function to convert world to screen coordinates
+						function worldToScreen(worldPos) {
+							const vector = new Vector3(worldPos.x, worldPos.y, worldPos.z || 0);
+							vector.project(camera);
+							
+							const rect = canvas.getBoundingClientRect();
+							return {
+								x: (vector.x * 0.5 + 0.5) * rect.width,
+								y: (-vector.y * 0.5 + 0.5) * rect.height,
+								visible: vector.z < 1 && vector.z > -1
+							};
+						}
+						
+						// Function to update screen positions
+						function updateScreenLabels() {
+							screenLabels = worldLabels.map(label => ({
+								...label,
+								screenPos: worldToScreen(label.worldPos)
+							}));
+						}
+						
+						// Initial update
+						updateScreenLabels();
+						
+						// Listen for camera changes
+						controls.addEventListener('change', updateScreenLabels);
+						console.log('✅ Listening for camera changes');
+						
+						// Also update when layout changes (positions might change)
+						sootElement.addEventListener('changeLayout', () => {
+							// Re-compute world positions after a delay for animation
+							setTimeout(() => {
+								worldLabels = computeWorldPositions();
+								updateScreenLabels();
+							}, 500);
+						});
+						
+						// Expose helper to toggle labels
+						window.toggleLabels = () => {
+							labelsVisible = !labelsVisible;
+							console.log('Labels visible:', labelsVisible);
+						};
+						
+						console.log('✅ Category labels set up successfully');
+						console.log('Use window.toggleLabels() to show/hide labels');
+						console.groupEnd();
+						
+					} catch (error) {
+						console.error('❌ Error setting up category labels:', error);
+						console.groupEnd();
+					}
+				}, 2000); // Wait for full initialization
+
 				sootElement.addEventListener("selectInstance", async (event) => {
 					instanceSelected = await sootElement?.expose?.getInstanceDetails(event.detail.eventData.instanceId);
 					console.log(instanceSelected)
 					showModal = true;
-				}
-			)	
+				});				
 			});
 
 
@@ -773,10 +966,34 @@
 	</div>
 
 	<div id="soot-publication" class="{showModal ? 'soot-publication-hide' : 'soot-publication-show'}">
+	
+	<!-- Category Labels Overlay -->
+	{#if labelsVisible && screenLabels.length > 0}
+		<div class="labels-overlay">
+			{#each screenLabels as label (label.tagId)}
+				{#if label.screenPos?.visible}
+					<div 
+						class="category-label"
+						style="
+							left: {label.screenPos.x}px;
+							top: {label.screenPos.y}px;
+						"
+					>
+						<span class="label-text">{label.label}</span>
+						<span class="label-count">{label.instanceCount}</span>
+					</div>
+				{/if}
+			{/each}
+		</div>
+	{/if}
+	
 	<soot-publication
 		bind:this={sootElement}
 		slug="b21da04d-96b2-47aa-b5c2-4f9c71e4072f"
 	>
+	<div slot="overlay-container">
+
+	</div>
 			<div slot="viewslist">
 				<!-- <button style="position:fixed; z-index: 10000000;" on:click={() => {
 					showModal = false;
@@ -795,7 +1012,7 @@
 									{activeFilter.label} <span class="clear-x">×</span>
 								</button>
 							{:else}
-								<!-- Show all filter buttons -->
+								<!-- Showfind all filter buttons -->
 								{#each citiesList
 									// Sort by index in highlightedGeographies (preserves order from highlightedGeographies), non-matches come last
 									.slice()
@@ -962,5 +1179,61 @@
 	.modal-container.show-modal {
 		/* visibility: visible; */
 		transform: translate(0,0);
+	}
+
+	/* Category Labels Overlay */
+	.labels-overlay {
+		position: fixed;
+		top: 0;
+		left: 0;
+		width: 100%;
+		height: 100%;
+		pointer-events: none;
+		z-index: 1000;
+		overflow: hidden;
+	}
+
+	.category-label {
+		position: absolute;
+		transform: translate(-50%, -100%);
+		pointer-events: auto;
+		cursor: pointer;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 2px;
+		transition: opacity 0.15s ease;
+	}
+
+	.category-label:hover {
+		z-index: 1001;
+	}
+
+	.category-label:hover .label-text {
+		background: #000;
+		color: #fff;
+	}
+
+	.label-text {
+		font-family: 'Atlas Typewriter', monospace;
+		font-size: 11px;
+		font-weight: 400;
+		color: #000;
+		background: rgba(255, 255, 255, 0.9);
+		padding: 3px 8px;
+		border-radius: 3px;
+		white-space: nowrap;
+		box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+		-webkit-font-smoothing: antialiased;
+		transition: background 0.15s ease, color 0.15s ease;
+	}
+
+	.label-count {
+		font-family: 'Atlas Typewriter', monospace;
+		font-size: 9px;
+		color: #666;
+		background: rgba(255, 255, 255, 0.7);
+		padding: 1px 4px;
+		border-radius: 2px;
 	}
 </style>

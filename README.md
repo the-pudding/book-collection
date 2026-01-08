@@ -1,26 +1,21 @@
 *****need to analyze menu items for each page. create list of related image ids map -- pull image items using existing csv...this will be a map of items to the parent image_id...run anakysis and explanatino on that..
 
-
 run fanciness anlaysis, trying to get it to define items.
 run familiarity anlaysis: trying to get to define items.
 
-get cool restaurants on there...like waldorf
 offensive things??
 but what if that's the point...like chinese food that's old? or takes on other culture's food? like italian? first mention of pizza? or collactions--where became more popular as a luxury item...like lobster?
 coinsider changing to pre 1950—has a sort of charm to just having that data...
 
 
+# mapping of image_id to other image_ids
+menu-page-aggregated-ids.json
+
 decide on images for soot:
 - try removing germany...or maybe just one's with a geography?
 # remove anything less than 1960s -> "image_ids_after_1959.json"
-- remove anything that doesn't have high-res
 - could also just do first page of menu with menu content (so less repeating?)
 
-
-
-missing related images from image download!!! only need for the 7500 i use though...
-
-need to still get waldorf other other famous restaurants...Ritz-Carlton
 
 # analyze-menu-content.js -> creates one line summary of the menu for modal
 # running on all menus with dishes
