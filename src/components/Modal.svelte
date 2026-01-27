@@ -10,6 +10,40 @@
 	let sidebarExpanded = $state(false);
 
     let { aspectRatioMap,instanceSelected, relatedImageIds, showModal = $bindable(), relatedMetadata, sootElement } = $props();
+
+	// Historical CPI data for inflation calculation (base year 1982-84 = 100)
+	const cpiData = {
+		1850: 8.3, 1860: 9.1, 1870: 12.4, 1880: 10.2, 1890: 9.5,
+		1900: 8.5, 1910: 9.8, 1920: 20.0, 1930: 16.7, 1940: 14.0,
+		1950: 24.1, 1960: 29.6, 1970: 38.8, 1980: 82.4, 1990: 130.7,
+		2000: 172.2, 2010: 218.1, 2020: 258.8, 2026: 315.0
+	};
+
+	// Interpolate CPI for any year
+	function getCPI(year) {
+		if (!year) return null;
+		const years = Object.keys(cpiData).map(Number).sort((a, b) => a - b);
+		if (year <= years[0]) return cpiData[years[0]];
+		if (year >= years[years.length - 1]) return cpiData[years[years.length - 1]];
+		
+		for (let i = 0; i < years.length - 1; i++) {
+			if (year >= years[i] && year <= years[i + 1]) {
+				const ratio = (year - years[i]) / (years[i + 1] - years[i]);
+				return cpiData[years[i]] + ratio * (cpiData[years[i + 1]] - cpiData[years[i]]);
+			}
+		}
+		return null;
+	}
+
+	// Calculate what $1 from the menu year is worth today
+	let inflationValue = $derived.by(() => {
+		const menuYear = relatedMetadata?.year;
+		if (!menuYear) return null;
+		const historicalCPI = getCPI(menuYear);
+		const currentCPI = cpiData[2026];
+		if (!historicalCPI) return null;
+		return (currentCPI / historicalCPI).toFixed(2);
+	});
     
     // Log when props change (must be in $effect to react to changes)
     $effect(() => {
@@ -160,6 +194,11 @@
 		</div>
 	</div>
 	<div class="sidebar" class:expanded={sidebarExpanded}>
+		{#if inflationValue && relatedMetadata?.year}
+		<div class="inflation-calc">
+			<span class="dollar">$1</span> in {relatedMetadata.year} ≈ <span class="dollar">${inflationValue}</span> today
+		</div>
+		{/if}
 		<p>The menu presents a stark contrast between very simple, everyday dishes (Oatmeal, Frankfurter Wurst, Salted Mackerel) and an exceptionally luxurious offering from the era, 'Filet v. Schildkrote m. Truffeln' (Fillet of Turtle with Truffles). This blend is characteristic of a high-class establishment, such as a grand hotel or ocean liner, catering to the diverse tastes of an affluent clientele. While many items are basic, the presence of a true haute cuisine dish featuring rare and expensive ingredients like turtle and truffles signifies a highly capable kitchen and elevates the menu to a fine dining level.</p>
 		<div class="black-scroll" onclick={toggleSidebar}>
 			<p>{sidebarExpanded ? 'SHRINK' : 'EXPAND'}</p>
@@ -177,6 +216,20 @@
 </div>
 
 <style>
+	.inflation-calc {
+		padding: 12px 10px;
+		background: #222;
+		color: #fff;
+		font-size: 13px;
+		font-family: 'Atlas Typewriter', monospace;
+		text-align: center;
+		border-bottom: 1px solid #000;
+		letter-spacing: 0.02em;
+	}
+	.inflation-calc .dollar {
+		color: #7bed9f;
+		font-weight: 700;
+	}
 	.sidebar p {
 		padding: 10px;
 		background: #f7f7f7;

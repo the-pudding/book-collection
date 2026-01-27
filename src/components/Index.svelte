@@ -1,12 +1,14 @@
 <script>
-	import { onMount } from "svelte";
+	import { onMount, getContext } from "svelte";
 	import { browser } from "$app/environment";
 	import Modal from "$components/Modal.svelte";
 	import loadCsv from "../utils/loadCsv";
 	import metaData from "$data/metadata.csv";
 	import MapboxGeocoder from '@mapbox/mapbox-gl-geocoder';
 	import '@mapbox/mapbox-gl-geocoder/dist/mapbox-gl-geocoder.css';
-	import { Squirrel, Turtle, Bird, Brain } from "@lucide/svelte";
+	import { Squirrel, Turtle, Bird, Brain, ChevronRight, ChevronLeft } from "@lucide/svelte";
+	import Header from "$components/Header.svelte";
+
 
 	let sootElement;
 	let metadataLookup = {};
@@ -22,17 +24,23 @@
 	let activeFilter = $state(null); // Track the currently selected filter
 	let geocoderContainer;
 	let geocoder;
+	let tour = $state(true);
+	let tourMinimized = $state(false);
 
 	let aspectRatioMap = $state(new Map());
 
 	let menuData = $state(null);
 	let menuDataLoaded = $state(false);
+
+	let copy = getContext("copy");
 	
 	// Index structures for quick lookup
 	let imageIdToMenuId = $state(new Map());
 	let menuIdToImageIds = $state(new Map());
 
 	let highlightedGeographies = ["New York, NY","Detroit, MI", "Boston, MA", "Chicago, IL", "San Francisco, CA", "Los Angeles, CA"];
+	let tourStep = $state(0);
+	let tourText = copy.body;
 	
 	// Category labels with screen positions
 	let screenLabels = $state([]);
@@ -141,6 +149,14 @@
 		const views = await sootElement?.expose?.getViews();
 		if (views && views.length > 0) {
 			sootElement?.expose?.setActiveView(views[0].id);
+		}
+	}
+
+	async function changeFilterByIndex(index) {
+		const views = await sootElement?.expose?.getViews();
+		if (views && views.length > 0) {
+			activeFilter = { raw: views[index].displayName, label: views[index].displayName };
+			sootElement?.expose?.setActiveView(views[index].id);
 		}
 	}
 
@@ -381,11 +397,11 @@
 			sootElement.addEventListener('loadComplete', async (e) => {
 
 				const views = await sootElement?.expose?.getViews();
-						console.log(views)
+				console.log(views)
 
-						if (views && views.length > 0) {
-							sootElement?.expose?.setActiveView(views[0].id);
-						}
+				if (views && views.length > 0) {
+					sootElement?.expose?.setActiveView(views[0].id);
+				}
 
 				setTimeout(() => {
 					try {
@@ -672,14 +688,14 @@
 						
 						if (controls) {
 							controls.smoothZoomMode = 'SCROLL_TO_ZOOM';
-							controls.zoomSpeed = 10;
-							controls.panSpeed = .7;
-							controls.scrollToZoomSpeed = 0.00030;
-							controls.dynamicDampingFactor = .0005;
-							controls.dynamicDampingFactorWhilePanning = 0;
-							controls.dynamicDampingFactorWhileWheelPanning = 0;
-							console.log('✅ Zoom-on-scroll enabled!');
-							console.log('Controls:', controls);
+							// controls.zoomSpeed = 10;
+							// controls.panSpeed = .7;
+							// controls.scrollToZoomSpeed = 0.00030;
+							// controls.dynamicDampingFactor = .0005;
+							// controls.dynamicDampingFactorWhilePanning = 0;
+							// controls.dynamicDampingFactorWhileWheelPanning = 0;
+							// console.log('✅ Zoom-on-scroll enabled!');
+							// console.log('Controls:', controls);
 						} else {
 							console.warn('⚠️ Could not find controls in component tree');
 							console.log('💡 Available properties on sootElement:', Object.keys(sootElement));
@@ -755,42 +771,61 @@
 						// Get Vector3 class from Three.js
 						const Vector3 = camera.position.constructor;
 						
-						// Get the CATEGORY view's property ID
+						// Get views and instances
 						const views = space.collections.Views;
-						const categoryView = Object.values(views).find(v => v.parameters?.type === 'CATEGORY');
+						const instances = space.collections.Instances;
 						
-						if (!categoryView) {
+						// Find initial CATEGORY view
+						let currentCategoryView = Object.values(views).find(v => v.parameters?.type === 'CATEGORY');
+						
+						if (!currentCategoryView) {
 							console.warn('No CATEGORY view found');
 							console.groupEnd();
 							return;
 						}
 						
-						const propertyId = categoryView.parameters.property;
-						const instances = space.collections.Instances;
-						const propertyTemplate = space.root.instanceMetadataTemplate?.propertyTemplates?.[propertyId];
-						const tags = propertyTemplate?.typeDefinition?.orderedTags || [];
+						// Mutable category instances - will be rebuilt when view changes
+						let categoryInstances = {};
+						let currentPropertyId = null;
 						
-						// Create tag lookup
-						const tagIdToName = {};
-						tags.forEach(t => tagIdToName[t.id] = t.displayName);
-						
-						// Pre-compute which instances belong to which category
-						const categoryInstances = {};
-						for (const [instanceId, instance] of Object.entries(instances)) {
-							const yearValue = instance.metadata?.propertyValues?.[propertyId];
-							if (!yearValue) continue;
-							const tagIds = yearValue.tags || (yearValue.tag ? [yearValue.tag] : []);
-							for (const tagId of tagIds) {
-								const tagName = tagIdToName[tagId];
-								if (!tagName) continue;
-								if (!categoryInstances[tagName]) {
-									categoryInstances[tagName] = { tagId, instanceIds: [] };
-								}
-								categoryInstances[tagName].instanceIds.push(instanceId);
+						// Function to rebuild category instances for a given property
+						function rebuildCategoryInstances(propertyId) {
+							if (propertyId === currentPropertyId) {
+								console.log('Same property, skipping rebuild');
+								return false; // No change
 							}
+							
+							currentPropertyId = propertyId;
+							const propertyTemplate = space.root.instanceMetadataTemplate?.propertyTemplates?.[propertyId];
+							const tags = propertyTemplate?.typeDefinition?.orderedTags || [];
+							
+							// Create tag lookup
+							const tagIdToName = {};
+							tags.forEach(t => tagIdToName[t.id] = t.displayName);
+							
+							// Rebuild category instances
+							categoryInstances = {};
+							for (const [instanceId, instance] of Object.entries(instances)) {
+								const propValue = instance.metadata?.propertyValues?.[propertyId];
+								if (!propValue) continue;
+								const tagIds = propValue.tags || (propValue.tag ? [propValue.tag] : []);
+								for (const tagId of tagIds) {
+									const tagName = tagIdToName[tagId];
+									if (!tagName) continue;
+									if (!categoryInstances[tagName]) {
+										categoryInstances[tagName] = { tagId, instanceIds: [] };
+									}
+									categoryInstances[tagName].instanceIds.push(instanceId);
+								}
+							}
+							
+							console.log(`Rebuilt categories for property ${propertyId}: found ${Object.keys(categoryInstances).length} categories`);
+							console.log(categoryInstances);
+							return true; // Changed
 						}
 						
-						console.log(`Found ${Object.keys(categoryInstances).length} categories`);
+						// Initial build
+						rebuildCategoryInstances(currentCategoryView.parameters.property);
 						
 						// Function to compute world positions
 						function computeWorldPositions() {
@@ -846,29 +881,48 @@
 						}
 						
 						// Function to update screen positions
-						function updateScreenLabels() {
-							screenLabels = worldLabels.map(label => ({
+						function updateScreenLabels(callback) {
+							const updatedLabels = worldLabels.map(label => ({
 								...label,
 								screenPos: worldToScreen(label.worldPos)
 							}));
+							screenLabels = updatedLabels;
+							
+							if (callback && typeof callback === 'function') {
+								callback(updatedLabels);
+							}
+						}
+						
+						// Throttled version - synced to display refresh rate
+						let frameScheduled = false;
+						let pendingCallback = null;
+						
+						function throttledUpdateScreenLabels(callback) {
+							if (callback) pendingCallback = callback;
+							if (frameScheduled) return;
+							
+							frameScheduled = true;
+							requestAnimationFrame(() => {
+								updateScreenLabels(pendingCallback);
+								frameScheduled = false;
+								pendingCallback = null;
+							});
 						}
 						
 						// Initial update
 						updateScreenLabels();
 						
-						// Listen for camera changes
-						controls.addEventListener('change', updateScreenLabels);
-						console.log('✅ Listening for camera changes');
+						// Listen for camera changes (throttled)
+						controls.addEventListener('change', () => throttledUpdateScreenLabels());
 						
-						// Also update when layout changes (positions might change)
-						sootElement.addEventListener('changeLayout', () => {
-							// Re-compute world positions after a delay for animation
-							setTimeout(() => {
-								worldLabels = computeWorldPositions();
-								updateScreenLabels();
-							}, 500);
+						// Minimize tour on first canvas interaction
+						controls.addEventListener('start', () => {
+							if (tour && !tourMinimized) {
+								tourMinimized = true;
+							}
 						});
-						
+						console.log('✅ Listening for camera changes');
+												
 						// Expose helper to toggle labels
 						window.toggleLabels = () => {
 							labelsVisible = !labelsVisible;
@@ -877,6 +931,34 @@
 						
 						console.log('✅ Category labels set up successfully');
 						console.log('Use window.toggleLabels() to show/hide labels');
+						
+						// Listen for layout changes to recompute label positions and categories
+						sootElement.addEventListener('changeLayout', (e) => {
+							const layout = e.detail?.eventData?.layout;
+							
+							// Check if this is a SAVED_VIEW with a CATEGORY type
+							if (layout?.type === 'SAVED_VIEW' && layout.viewId) {
+								const newView = views[layout.viewId];
+								if (newView?.parameters?.type === 'CATEGORY') {
+									// Show labels for CATEGORY views
+									labelsVisible = true;
+									
+									setTimeout(() => {
+										const newPropertyId = newView.parameters.property;
+										rebuildCategoryInstances(newPropertyId);
+										worldLabels = computeWorldPositions();
+										throttledUpdateScreenLabels();
+									}, 500);
+								} else {
+									// Hide labels for non-CATEGORY saved views
+									labelsVisible = false;
+								}
+							} else {
+								// Hide labels for non-saved-view layouts (e.g., search)
+								labelsVisible = false;
+							}
+						});
+						
 						console.groupEnd();
 						
 					} catch (error) {
@@ -889,57 +971,58 @@
 					instanceSelected = await sootElement?.expose?.getInstanceDetails(event.detail.eventData.instanceId);
 					console.log(instanceSelected)
 					showModal = true;
-				});				
-			});
-
-
-
-			sootElement.addEventListener('changeLayout', (e) => {
-				console.group('🔄 Layout Changed');
+				});
 				
-				const layout = e.detail.eventData.layout;
-				const triggerType = e.detail.eventData.triggerType;
+				sootElement.addEventListener('changeLayout', (e) => {
 
-				console.log(e.detail)
-				
-				console.log('Trigger Type:', triggerType);
-				console.log('New Layout:', layout);
-				
-				if (layout.type === 'SAVED_VIEW') {
-					console.log('  └─ Layout Type: Saved View');
-					console.log('  └─ View ID:', layout.viewId);
-					if (layout.focusOnInstanceId) {
-						console.log('  └─ Focused Instance:', layout.focusOnInstanceId);
-					}
-				} else if (layout.type === 'SEARCH') {
-					console.log('  └─ Layout Type: Search');
-					console.log('  └─ Search Query Type:', layout.query.type);
-					if (layout.query.type === 'TEXT') {
-						console.log('  └─ Search Text:', layout.query.text);
-						lastSearchText = layout.query.text;
-					} else if (layout.query.type === 'SEE_SIMILAR') {
-						console.log('  └─ Similar to image');
-						lastSearchText = 'Similar to image';
-					} else if (layout.query.type === 'FILTER_TO_TAG') {
-						console.log('  └─ Tag ID:', layout.query.tagId);
-						console.log('  └─ Property ID:', layout.query.propertyId);
-						if (layout.query.instanceId) {
-							console.log('  └─ Instance ID:', layout.query.instanceId);
+
+					console.group('🔄 Layout Changed');
+
+					const layout = e.detail.eventData.layout;
+					const triggerType = e.detail.eventData.triggerType;
+
+					console.log(e.detail)
+
+					console.log('Trigger Type:', triggerType);
+					console.log('New Layout:', layout);
+
+					if (layout.type === 'SAVED_VIEW') {
+						console.log('  └─ Layout Type: Saved View');
+						console.log('  └─ View ID:', layout.viewId);
+						if (layout.focusOnInstanceId) {
+							console.log('  └─ Focused Instance:', layout.focusOnInstanceId);
 						}
-						if (layout.query.objectVersionId) {
-							console.log('  └─ Object Version ID:', layout.query.objectVersionId);
+					} else if (layout.type === 'SEARCH') {
+						console.log('  └─ Layout Type: Search');
+						console.log('  └─ Search Query Type:', layout.query.type);
+						if (layout.query.type === 'TEXT') {
+							console.log('  └─ Search Text:', layout.query.text);
+							lastSearchText = layout.query.text;
+						} else if (layout.query.type === 'SEE_SIMILAR') {
+							console.log('  └─ Similar to image');
+							lastSearchText = 'Similar to image';
+						} else if (layout.query.type === 'FILTER_TO_TAG') {
+							console.log('  └─ Tag ID:', layout.query.tagId);
+							console.log('  └─ Property ID:', layout.query.propertyId);
+							if (layout.query.instanceId) {
+								console.log('  └─ Instance ID:', layout.query.instanceId);
+							}
+							if (layout.query.objectVersionId) {
+								console.log('  └─ Object Version ID:', layout.query.objectVersionId);
+							}
+							lastSearchText = 'Filtered to tag';
+						} else if (layout.query.type === 'METADATA_SEARCH') {
+							console.log('  └─ Metadata search');
+							lastSearchText = 'Metadata search';
 						}
-						lastSearchText = 'Filtered to tag';
-					} else if (layout.query.type === 'METADATA_SEARCH') {
-						console.log('  └─ Metadata search');
-						lastSearchText = 'Metadata search';
 					}
-				}
-				
-				console.groupEnd();
-				currentLayout = layout;
-			});
 
+					console.groupEnd();
+					currentLayout = layout;
+				});
+
+			});
+			
 		}
 	});
 </script>
@@ -967,34 +1050,71 @@
 
 	<div id="soot-publication" class="{showModal ? 'soot-publication-hide' : 'soot-publication-show'}">
 	
-	<!-- Category Labels Overlay -->
-	{#if labelsVisible && screenLabels.length > 0}
-		<div class="labels-overlay">
-			{#each screenLabels as label (label.tagId)}
-				{#if label.screenPos?.visible}
-					<div 
-						class="category-label"
-						style="
-							left: {label.screenPos.x}px;
-							top: {label.screenPos.y}px;
-						"
-					>
-						<span class="label-text">{label.label}</span>
-						<span class="label-count">{label.instanceCount}</span>
-					</div>
-				{/if}
-			{/each}
-		</div>
-	{/if}
+
 	
 	<soot-publication
 		bind:this={sootElement}
 		slug="b21da04d-96b2-47aa-b5c2-4f9c71e4072f"
 	>
 	<div slot="overlay-container">
-
 	</div>
 			<div slot="viewslist">
+				{#if tour}
+				<Header />
+
+					<div 
+						class="tour-container {tourMinimized ? 'minimized' : ''}"
+						onclick={() => { if (tourMinimized) tourMinimized = false; }}
+						role="button"
+						tabindex="0"
+						onkeydown={(e) => { if (tourMinimized && (e.key === 'Enter' || e.key === ' ')) tourMinimized = false; }}
+					>
+						<div class="tour-content">
+							{#each tourText[tourStep].content as paragraph}
+								<p>{@html paragraph.value}</p>
+							{/each}
+						</div>
+						{#if tourStep <= tourText.length - 1}
+							<button class="tour-button" onclick={() => { 
+								tourStep++;
+								animalFilter("rare"); 
+							}}>
+								{tourText[tourStep].section}
+								<div class="tour-arrow-right">
+									<ChevronRight size="30" strokeWidth="1.7" color="#000" />
+								</div>	
+							</button>
+						{/if}
+						<!-- {#if tourStep > 0}
+							<button class="tour-button" onclick={() => tourStep--}>
+								<div class="tour-arrow-left">
+									<ChevronLeft size="15" strokeWidth="1.2" color="#000" />
+								</div>
+							</button>
+						{/if} -->
+						{#if tourMinimized}
+							<div class="tour-tab">Tap to continue tour</div>
+						{/if}
+					</div>
+				{/if}
+					<!-- Category Labels Overlay -->
+				{#if labelsVisible && screenLabels.length > 0}
+					<div class="labels-overlay">
+						{#each screenLabels as label (label.tagId)}
+							{#if label.screenPos?.visible}
+								<div 
+									class="category-label"
+									style="
+										left: {Math.round(label.screenPos.x)}px;
+										top: {Math.round(label.screenPos.y)}px;
+									"
+								>
+									<span class="label-text">{label.label}</span>
+								</div>
+							{/if}
+						{/each}
+					</div>
+				{/if}
 				<!-- <button style="position:fixed; z-index: 10000000;" on:click={() => {
 					showModal = false;
 					sootElement?.expose?.deselectInstance();
@@ -1003,7 +1123,7 @@
 				</button> -->
 			
 				<!-- <button style="top: 0; position:fixed; z-index: 10000000;" class="modal-button" on:click={showModal = true}>Show Modal</button> -->
-				<div class="geocoder-container" bind:this={geocoderContainer}>
+				<div class="geocoder-container" style="visibility: {tourMinimized ? 'visible' : 'hidden'};" bind:this={geocoderContainer}>
 					{#if citiesList}
 						<div class="filter-container">
 							{#if activeFilter}
@@ -1033,6 +1153,7 @@
 									<button class="filter-button" onclick={() => filter(city[0], city[1])}>{city[1]}</button>
 								{/each}
 								<div class="divider"></div>
+								<button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => changeFilterByIndex(1)}>States</button>
 								<button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}>Pretenious</button>
 								<button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}>Casual</button>
 								<button style="background: #5a1d64;" class="filter-button fancy-button" onclick={() => animalFilter('plaza')}>Plaza Hotel</button>
@@ -1048,8 +1169,6 @@
 
 						</div>
 					{/if}
-
-
 				</div>
 			</div>
 			<div slot="focusview">
@@ -1060,6 +1179,69 @@
 </svelte:boundary>
 
 <style>
+	.tour-container {
+		position: fixed;
+		bottom: 0;
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 10000002;
+		background: rgba(255, 255, 255, 0.95);
+		-webkit-backdrop-filter: blur(1rem);
+		backdrop-filter: blur(1rem);
+		border-radius: 1rem 1rem 0 0;
+		padding: 2rem;
+		max-width: 500px;
+		width: 90%;
+		box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+		transition: transform 0.3s ease, opacity 0.3s ease;
+	}
+
+	.tour-container.minimized {
+		transform: translateX(-50%) translateY(calc(100% - 40px));
+		cursor: pointer;
+	}
+
+	.tour-container.minimized:hover {
+		transform: translateX(-50%) translateY(calc(100% - 45px));
+	}
+
+	.tour-container.minimized .tour-content {
+		opacity: 0;
+		pointer-events: none;
+	}
+
+	.tour-content {
+		transition: opacity 0.2s ease;
+	}
+
+	.tour-content h1 {
+		margin: 0 0 0.5rem 0;
+		font-family: 'Atlas Grotesk', sans-serif;
+		font-size: 1.5rem;
+		font-weight: 500;
+	}
+
+	.tour-content p {
+		margin: 0;
+		font-family: 'Atlas Grotesk', sans-serif;
+		font-size: 1rem;
+		line-height: 1.3;
+		letter-spacing: -0.01em;
+		color: #111;
+		margin-bottom: 1rem;
+	}
+
+	.tour-tab {
+		position: absolute;
+		top: 10px;
+		left: 50%;
+		transform: translateX(-50%);
+		font-family: 'Atlas Typewriter', monospace;
+		font-size: 12px;
+		color: #333;
+		white-space: nowrap;
+	}
+
 	.divider {
 		width: 100%;
 		height: 1px;
@@ -1197,7 +1379,6 @@
 		position: absolute;
 		transform: translate(-50%, -100%);
 		pointer-events: auto;
-		cursor: pointer;
 		display: flex;
 		flex-direction: column;
 		align-items: center;
@@ -1205,27 +1386,17 @@
 		transition: opacity 0.15s ease;
 	}
 
-	.category-label:hover {
-		z-index: 1001;
-	}
-
-	.category-label:hover .label-text {
-		background: #000;
-		color: #fff;
-	}
-
 	.label-text {
 		font-family: 'Atlas Typewriter', monospace;
 		font-size: 11px;
 		font-weight: 400;
-		color: #000;
-		background: rgba(255, 255, 255, 0.9);
+		color: #fff;
+		background: rgba(0, 0, 0, 0.9);
 		padding: 3px 8px;
 		border-radius: 3px;
 		white-space: nowrap;
-		box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+		/* box-shadow: 0 1px 3px rgba(0,0,0,0.2); */
 		-webkit-font-smoothing: antialiased;
-		transition: background 0.15s ease, color 0.15s ease;
 	}
 
 	.label-count {
@@ -1235,5 +1406,26 @@
 		background: rgba(255, 255, 255, 0.7);
 		padding: 1px 4px;
 		border-radius: 2px;
+	}
+
+	.tour-button {
+		background: none;
+		border: none;
+		cursor: pointer;
+		padding: 0;
+		margin: 0;
+		font-size: 16px;
+		display:flex;
+		font-weight: 600;
+		letter-spacing: -0.02em;
+		justify-content:flex-end;
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+		align-items: center;
+		width: 100%;
+	}
+
+	:global(.tour-button svg) {
+		transform: translate(0,2px);
 	}
 </style>

@@ -1,3 +1,28 @@
+FOR TOUR
+new categories (saved view)
+- restaurants
+- events
+- ships
+
+key menus (tag)
+ - norway, etc.
+
+ racist menus (tag)
+
+ abundance (tag)
+
+
+- create new dataset that includes ships, change to only go to 1924.
+- 
+
+
+
+
+
+maybe add back in 40s for ww22
+
+transcribe ship or cruise??
+
 *****need to analyze menu items for each page. create list of related image ids map -- pull image items using existing csv...this will be a map of items to the parent image_id...run anakysis and explanatino on that..
 
 run fanciness anlaysis, trying to get it to define items.
@@ -11,15 +36,23 @@ coinsider changing to pre 1950—has a sort of charm to just having that data...
 # mapping of image_id to other image_ids
 menu-page-aggregated-ids.json
 
-decide on images for soot:
-- try removing germany...or maybe just one's with a geography?
-# remove anything less than 1960s -> "image_ids_after_1959.json"
-- could also just do first page of menu with menu content (so less repeating?)
+# create file of images to remove after a certain date
+scripts/filter-by-date.js
 
-
+**CREATE CONTENT FOR MODAL**
 # analyze-menu-content.js -> creates one line summary of the menu for modal
 # running on all menus with dishes
 outputs to menu-content-analysis.json
+
+SO TO BUILD-FINAL-IMAGES-LIST.JS
+
+filtered_for_items.csv -> this file has image_ids and uuids of only images that have crownsourced data
+
+TODO: breakdown-menu-by-location.js -> menus-by-location.json -> extract-first-menu-id-per-group.js -> first-menu-id-per-group.json this is not working correctly to allow only one menu per year restaurant. this is removed from the build-final-images-list.js
+
+
+[only needs to be run once] extract-first-page-images.js -> first-page-images.csv - this is working. creates a json object menu-pages-map.json that is menu_id: array of [image_id, page_number]. this only includes pages with items and excludes anything that's primarily wine. this allows to surface only the first page for a menu_id.
+
 
 
 # create the neccessary content for the metadata file...
