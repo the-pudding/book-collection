@@ -8,12 +8,15 @@
 	import '@mapbox/mapbox-gl-geocoder/dist/mapbox-gl-geocoder.css';
 	import { Squirrel, Turtle, Bird, Brain, ChevronRight, ChevronLeft } from "@lucide/svelte";
 	import Header from "$components/Header.svelte";
+	import { fade } from "svelte/transition";
 
 
 	let sootElement;
 	let metadataLookup = {};
 	let currentLayout = null;
 	let autocompletes = [];
+	let controls = null;
+	let css = null;  // compactSpaceScene reference for zooming
 	let lastSearchText = null;
 	let searchInput = "";
 	let showAutocompletes = false;
@@ -41,6 +44,129 @@
 	let highlightedGeographies = ["New York, NY","Detroit, MI", "Boston, MA", "Chicago, IL", "San Francisco, CA", "Los Angeles, CA"];
 	let tourStep = $state(0);
 	let tourText = copy.body;
+	
+	// Views lookup by ID and current saved layout
+	let viewsById = $state({});
+	let savedLayout = $state(null);
+	
+	// Menu type label mapping
+	const menuTypeLabels = {
+		0: 'Restaurant',
+		1: 'Ship/Train',
+		2: 'Event'
+	};
+	
+	/**
+	 * Get the display label for a category based on the current savedLayout
+	 * @param {string|number} value - The raw label value
+	 * @returns {string} The formatted display label
+	 */
+	function getLabelContent(value) {
+		// Check if current savedLayout is the menuType view
+		const currentView = savedLayout ? viewsById[savedLayout] : null;
+		
+
+
+		if (currentView?.displayName === 'state') {
+			if(value == "n/a"){
+				return "Location Missing"
+			}
+			return value;
+		}
+		if (currentView?.displayName === 'menuType') {
+			// Use menuType mapping
+			const numValue = parseInt(value);
+			return menuTypeLabels[numValue] ?? value;
+		}
+		
+		// Default: return the value as-is
+		return value;
+	}
+	
+	// // Smooth zoom function
+	// function smoothZoom(controls, targetScale, duration = 1000) {
+	// 	const camera = controls.object;
+	// 	const startZ = camera.position.z;
+	// 	const endZ = startZ * targetScale;
+	// 	const startTime = performance.now();
+	// 	
+	// 	function animate() {
+	// 		const elapsed = performance.now() - startTime;
+	// 		const progress = Math.min(elapsed / duration, 1);
+	// 		
+	// 		// Ease out cubic for smooth deceleration
+	// 		const eased = 1 - Math.pow(1 - progress, 3);
+	// 		
+	// 		camera.position.z = startZ + (endZ - startZ) * eased;
+	// 		controls.update();
+	// 		
+	// 		if (progress < 1) {
+	// 			requestAnimationFrame(animate);
+	// 		}
+	// 	}
+	// 	
+	// 	animate();
+	// }
+
+	// Smooth zoom to a specific instance
+	// zoomDistance: how far camera sits from instance (smaller = more zoomed in)
+	// offsetPerZoom: nudge camera right/up per unit of zoom (e.g. {x: 0.02, y: 0.02})
+	function zoomToInstance(controls, css, instanceId, duration = 600, zoomDistance = 10, offsetPerZoom = { x: 0.02, y: 0.02 }) {
+		const position = css.getInstancePosition(instanceId);
+		if (!position) return;
+		
+		const offsetX = (offsetPerZoom?.x ?? 0) * zoomDistance;
+		const offsetY = (offsetPerZoom?.y ?? 0) * zoomDistance;
+		
+		const camera = controls.object;
+		const startPos = { x: camera.position.x, y: camera.position.y, z: camera.position.z };
+		const endPos = { x: position.x + offsetX, y: position.y + offsetY, z: position.z + zoomDistance };
+		const startTime = performance.now();
+		
+		function animate() {
+			const elapsed = performance.now() - startTime;
+			const progress = Math.min(elapsed / duration, 1);
+			
+			// Ease in-out quad
+			const eased = progress < 0.5 
+				? 2 * progress * progress 
+				: 1 - Math.pow(-2 * progress + 2, 2) / 2;
+			
+			camera.position.x = startPos.x + (endPos.x - startPos.x) * eased;
+			camera.position.y = startPos.y + (endPos.y - startPos.y) * eased;
+			camera.position.z = startPos.z + (endPos.z - startPos.z) * eased;
+			
+			// Also move target to keep camera looking at instance
+			controls.target.x = camera.position.x;
+			controls.target.y = camera.position.y;
+			controls.target.z = 0;
+			
+			controls.update();
+			
+			if (progress < 1) {
+				requestAnimationFrame(animate);
+			}
+		}
+		
+		animate();
+	}
+
+	// Watch for tourStep changes and apply filters
+	$effect(() => {
+
+		if (tourStep === 1) {
+			changeFilterByIndex(2);
+		}
+		if(tourStep === 2) {
+
+			filter("focus")
+			setTimeout(() => {
+				// Usage: zoomToInstance(controls, css, "instance-id", 600);
+				zoomToInstance(controls, css, "de0e09c1-172d-4e38-ae5a-ddf243184d77", 600, 4, { x: -.2, y: -.2 });
+				// smoothZoom(controls, 0.01, 1000);
+			}, 1000)
+		}
+	});
 	
 	// Category labels with screen positions
 	let screenLabels = $state([]);
@@ -123,23 +249,15 @@
 
 	}
 
-	async function filter(location, label){
-		// showModal = true;
-		// const autocompletes = await sootElement?.expose?.getAutocompletions("tag");
-		// console.log(autocompletes)
-
-		// const layout = `{
-		// 		type: 'FILTER_TO_TAG',
-		// 		instanceId: null,
-		// 		objectVersionId: null,
-		// 		propertyId: '8b5df9fc-8e50-4d23-a6cb-4df765173d40',
-		// 		tagId: '0d467b2b-8583-4d25-9dbc-3221671a5c51'
-		// }`;
-		
+	async function filter(location){
 		// Set active filter
-		activeFilter = { raw: location, label: label };
+		activeFilter = { raw: location, label: location };
+		// Ensure location is urlencoded before sending to executeSearch
+		const encodedLocation = encodeURIComponent(location);
 
-		await sootElement?.expose?.executeSearch(location);
+		console.log('encodedLocation', encodedLocation);
+
+		await sootElement?.expose?.executeSearch(encodedLocation);
 		
 	}
 
@@ -182,47 +300,38 @@
 			}
 
 			let matches = cities
-				.filter(city => {
-					const label = city[1].toLowerCase();
-					return label.includes(queryLower);
-				})
-				.slice(0, 3) // Limit to 5 results
+				.filter(city => city.toLowerCase().includes(queryLower))
+				.slice(0, 3)
 				.map(city => ({
 					type: 'Feature',
 					geometry: {
 						type: 'Point',
-						coordinates: [0, 0] // Dummy coordinates, not used
+						coordinates: [0, 0]
 					},
-					place_name: city[1],
+					place_name: city,
 					properties: {
-						rawLocation: city[0],
-						formattedLocation: city[1]
+						location: city
 					}
 				}));
 
-			// Now, also append state matches (states is [value, label] array)
-			let stateMatches = [];
+			// Also append state matches
 			if (states && Array.isArray(states)) {
-				stateMatches = states
-					.filter(state => {
-						const label = state[1].toLowerCase();
-						return label.includes(queryLower);
-					})
-					.slice(0, 2) // Limit to 3 state results to balance with cities
+				const stateMatches = states
+					.filter(state => state.toLowerCase().includes(queryLower))
+					.slice(0, 2)
 					.map(state => ({
 						type: 'Feature',
 						geometry: {
 							type: 'Point',
-							coordinates: [0, 0] // Dummy coordinates, not used
+							coordinates: [0, 0]
 						},
-						place_name: state[1],
+						place_name: state,
 						properties: {
-							rawLocation: state[0],
-							formattedLocation: state[1]
+							location: state
 						}
 					}));
+				matches = matches.concat(stateMatches);
 			}
-			matches = matches.concat(stateMatches);
 
 			return matches;
 		};
@@ -244,10 +353,8 @@
 		// Handle result selection
 		geocoder.on('result', (e) => {
 			const result = e.result;
-			if (result.properties) {
-				const rawLocation = result.properties.rawLocation;
-				const formattedLocation = result.properties.formattedLocation;
-				filter(rawLocation, formattedLocation);
+			if (result.properties?.location) {
+				filter(result.properties.location);
 			}
 		});
 
@@ -261,7 +368,7 @@
 		geocoderContainer.appendChild(geocoderElement);
 		
 		// Create a Set of valid city names for quick lookup
-		const validCityNames = new Set(cities.map(city => city[1]));
+		const validCityNames = new Set(cities);
 		
 		// Use MutationObserver to filter out invalid suggestions in real-time
 		const suggestionsContainer = geocoderElement.querySelector('.mapboxgl-ctrl-geocoder--suggestions');
@@ -317,27 +424,20 @@
 					menuData = await loadCsv("data/menu-map.csv");
 						
 					if (Array.isArray(metaData)) {
-						// Create a unique list of locations from metaData using a Map to dedup by raw location string
-						if (Array.isArray(metaData)) {
-							const locationsMap = new Map();
-							const locationsStateMap = new Map();
-							metaData.forEach(row => {
-								if (row.city && row.city.trim() !== '') {
-									const rawLocation = row.city.trim();
-									const formattedLocation = rawLocation.replace(/\$|\?/g, match => match === '$' ? ', ' : ' ');
-									locationsMap.set(rawLocation, [rawLocation, formattedLocation]);
-								}
-								if(row.state && row.state.trim() !== '') {
-									const rawLocation = row.state.trim();
-									const formattedLocation = rawLocation.replace(/\$|\?/g, match => match === '$' ? ', ' : ' ');
-									locationsStateMap.set(rawLocation, [rawLocation, formattedLocation]);
-								}
-							});
-							
-							// Convert Map values to array
-							citiesList = Array.from(locationsMap.values());
-							statesList = Array.from(locationsStateMap.values());
-						}
+						// Create unique lists of locations from metaData
+						const citiesSet = new Set();
+						const statesSet = new Set();
+						metaData.forEach(row => {
+							if (row.city && row.city.trim() !== '') {
+								citiesSet.add(row.city.trim());
+							}
+							if (row.state && row.state.trim() !== '') {
+								statesSet.add(row.state.trim());
+							}
+						});
+						
+						citiesList = Array.from(citiesSet);
+						statesList = Array.from(statesSet);
 						metaData.forEach(row => {
 							if (row.filename) {
 								const key = row.filename.replace(/\.jpg$/i, "");
@@ -395,17 +495,25 @@
 			})();
 
 			sootElement.addEventListener('loadComplete', async (e) => {
-
+				console.log(sootElement.expose)
 				const views = await sootElement?.expose?.getViews();
 				console.log(views)
 
 				if (views && views.length > 0) {
+					// Build viewsById lookup object
+					viewsById = views.reduce((acc, view) => {
+						acc[view.id] = view;
+						return acc;
+					}, {});
+					
+					// Set savedLayout to the first view's ID
+					savedLayout = views[0].id;
+					
 					sootElement?.expose?.setActiveView(views[0].id);
 				}
 
 				setTimeout(() => {
 					try {
-						let controls = null;
 
 						
 					// Helper function to safely get component name
@@ -687,6 +795,7 @@
 						}
 						
 						if (controls) {
+							console.log(controls)
 							controls.smoothZoomMode = 'SCROLL_TO_ZOOM';
 							// controls.zoomSpeed = 10;
 							// controls.panSpeed = .7;
@@ -755,9 +864,9 @@
 							return;
 						}
 						
-						const css = dataSource.compactSpaceScene;
+						css = dataSource.compactSpaceScene;
 						const renderTarget = dataSource.renderTarget;
-						const controls = dataSource.controls;
+						controls = dataSource.controls;
 						const space = css.space;
 						const camera = renderTarget?.threeCamera;
 						const canvas = sootElement.shadowRoot.querySelector('canvas');
@@ -992,6 +1101,12 @@
 						if (layout.focusOnInstanceId) {
 							console.log('  └─ Focused Instance:', layout.focusOnInstanceId);
 						}
+						
+						// Update savedLayout if the viewId exists in viewsById
+						if (layout.viewId && viewsById[layout.viewId]) {
+							savedLayout = layout.viewId;
+							console.log('  └─ Updated savedLayout to:', savedLayout);
+						}
 					} else if (layout.type === 'SEARCH') {
 						console.log('  └─ Layout Type: Search');
 						console.log('  └─ Search Query Type:', layout.query.type);
@@ -1054,7 +1169,7 @@
 	
 	<soot-publication
 		bind:this={sootElement}
-		slug="b21da04d-96b2-47aa-b5c2-4f9c71e4072f"
+		slug="d4758735-2d66-49bb-bbb4-3f3f4bf9085b"
 	>
 	<div slot="overlay-container">
 	</div>
@@ -1077,7 +1192,8 @@
 						{#if tourStep <= tourText.length - 1}
 							<button class="tour-button" onclick={() => { 
 								tourStep++;
-								animalFilter("rare"); 
+								
+								// animalFilter("rare"); 
 							}}>
 								{tourText[tourStep].section}
 								<div class="tour-arrow-right">
@@ -1093,27 +1209,30 @@
 							</button>
 						{/if} -->
 						{#if tourMinimized}
-							<div class="tour-tab">Tap to continue tour</div>
+							<div class="tour-tab">TAP/CLICK TO CONTINUE TOUR</div>
 						{/if}
 					</div>
 				{/if}
 					<!-- Category Labels Overlay -->
 				{#if labelsVisible && screenLabels.length > 0}
-					<div class="labels-overlay">
-						{#each screenLabels as label (label.tagId)}
-							{#if label.screenPos?.visible}
-								<div 
-									class="category-label"
-									style="
-										left: {Math.round(label.screenPos.x)}px;
-										top: {Math.round(label.screenPos.y)}px;
-									"
-								>
-									<span class="label-text">{label.label}</span>
-								</div>
-							{/if}
-						{/each}
-					</div>
+					{#key savedLayout}
+						<div class="labels-overlay" transition:fade={{duration: 1000}}>
+							{#each screenLabels as label (label.tagId)}
+								{@const decodedLabel = decodeURIComponent(label.label)}
+								{#if label.screenPos?.visible}
+									<div
+										class="category-label"
+										style="
+											left: {Math.round(label.screenPos.x)}px;
+											top: {Math.round(label.screenPos.y)}px;
+										"
+									>
+										<span class="label-text">{getLabelContent(decodedLabel)}</span>
+									</div>
+								{/if}
+							{/each}
+						</div>
+					{/key}
 				{/if}
 				<!-- <button style="position:fixed; z-index: 10000000;" on:click={() => {
 					showModal = false;
@@ -1133,34 +1252,20 @@
 								</button>
 							{:else}
 								<!-- Showfind all filter buttons -->
-								{#each citiesList
-									// Sort by index in highlightedGeographies (preserves order from highlightedGeographies), non-matches come last
-									.slice()
-									.sort((a, b) => {
-										const idxA = highlightedGeographies.indexOf(a[1]);
-										const idxB = highlightedGeographies.indexOf(b[1]);
-										// Both in the highlights: preserve order
-										if (idxA !== -1 && idxB !== -1) return idxA - idxB;
-										// Only a is in the highlights
-										if (idxA !== -1) return -1;
-										// Only b is in the highlights
-										if (idxB !== -1) return 1;
-										// Neither is highlighted, sort alphabetically
-										return a[1].localeCompare(b[1]);
-									}) 
-									.filter(city => highlightedGeographies.includes(city[1]))
-								as city}
-									<button class="filter-button" onclick={() => filter(city[0], city[1])}>{city[1]}</button>
+								{#each highlightedGeographies as city}
+									<button class="filter-button" onclick={() => filter(city)}>{city}</button>
 								{/each}
 								<div class="divider"></div>
 								<button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => changeFilterByIndex(1)}>States</button>
-								<button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}>Pretenious</button>
-								<button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}>Casual</button>
+								<button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => changeFilterByIndex(2)}>Menu Type</button>
+
+								<button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => animalFilter('pretentious')}>Pretentious</button>
+								<button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => animalFilter('casual')}>Casual</button>
 								<button style="background: #5a1d64;" class="filter-button fancy-button" onclick={() => animalFilter('plaza')}>Plaza Hotel</button>
 								<button style="background: #5a1d64;" class="filter-button fancy-button" onclick={() => animalFilter('waldorf')}>Waldorf-Astoria</button>
 								<button style="background: #5a1d64;" class="filter-button fancy-button" onclick={() => animalFilter('delmonicos')}>Delmonico's</button>
 								<div class="divider"></div>
-								<button style="background: #32641d;" class="filter-button fancy-button" onclick={() => filter(city[0], city[1])}>Obscure Dishes</button>
+								<button style="background: #32641d;" class="filter-button fancy-button" onclick={() => animalFilter('obscure')}>Obscure Dishes</button>
 								<button style="background: #32641d;" class="filter-button fancy-button" onclick={() => animalFilter('rare')}>Uncommon Meats</button>
 								<button style="background: #000;" class="filter-button fancy-button" onclick={() => animalFilter('squirrel')}><Squirrel size="20" strokeWidth="1.5" color="#ffcf24"/></button>
 								<button style="background: #000;" class="filter-button fancy-button" onclick={() => animalFilter('turtle')}><Turtle size="20" strokeWidth="1.5" color="#92e936"/></button>
@@ -1190,10 +1295,10 @@
 		backdrop-filter: blur(1rem);
 		border-radius: 1rem 1rem 0 0;
 		padding: 2rem;
-		max-width: 500px;
-		width: 90%;
+		max-width: 700px;
+		width: calc(100% - 100px);
 		box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
-		transition: transform 0.3s ease, opacity 0.3s ease;
+		transition: transform 0.1s ease, opacity 0.3s ease;
 	}
 
 	.tour-container.minimized {
@@ -1233,11 +1338,11 @@
 
 	.tour-tab {
 		position: absolute;
-		top: 10px;
+		top: 8px;
 		left: 50%;
 		transform: translateX(-50%);
 		font-family: 'Atlas Typewriter', monospace;
-		font-size: 12px;
+		font-size: 17px;
 		color: #333;
 		white-space: nowrap;
 	}
@@ -1390,10 +1495,10 @@
 		font-family: 'Atlas Typewriter', monospace;
 		font-size: 11px;
 		font-weight: 400;
-		color: #fff;
-		background: rgba(0, 0, 0, 0.9);
-		padding: 3px 8px;
-		border-radius: 3px;
+		color: white;
+		background: rgba(0, 0, 0, .9);
+		padding: 3px 4px;
+		border-radius: 2px;
 		white-space: nowrap;
 		/* box-shadow: 0 1px 3px rgba(0,0,0,0.2); */
 		-webkit-font-smoothing: antialiased;

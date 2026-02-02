@@ -103,3 +103,9 @@ svg {
 	width: 100%;
 	height: auto;
 }
+
+.note {
+	font-style: italic;
+	font-size: .9em;
+	color: #666;
+}
