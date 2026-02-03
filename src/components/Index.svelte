@@ -158,13 +158,35 @@
 			changeFilterByIndex(2);
 		}
 		if(tourStep === 2) {
-
+			// controls.maxDistance = 2.5;
 			filter("focus")
 			setTimeout(() => {
-				// Usage: zoomToInstance(controls, css, "instance-id", 600);
-				zoomToInstance(controls, css, "de0e09c1-172d-4e38-ae5a-ddf243184d77", 600, 4, { x: -.2, y: -.2 });
-				// smoothZoom(controls, 0.01, 1000);
+				zoomToInstance(controls, css, "de0e09c1-172d-4e38-ae5a-ddf243184d77", 600, 1, { x: -.5, y: -.3 });
+				// setTimeout(() => {
+				// 	controls.maxDistance = 2.5;
+				// }, 1000)
 			}, 1000)
+		}
+		if(tourStep === 3) {		
+			filter("delmonicos");
+			setTimeout(() => {
+				zoomToInstance(controls, css, "e26ff4ec-017d-4f31-9745-3cc6ac618325", 1500, 2.5, { x: -.2, y: -0.15 });
+			}, 1000)
+		}
+		if(tourStep === 4) {			
+			filter("off");
+			setTimeout(() => {
+				zoomToInstance(controls, css, "ec6eb893-c3d9-49d5-af49-c1c2aa036bd4", 1500, 2.5, { x: -.2, y: -0.15 });
+			}, 1000)
+		}
+		if(tourStep === 5) {		
+			filter("hist");
+			setTimeout(() => {
+				zoomToInstance(controls, css, "e26ff4ec-017d-4f31-9745-3cc6ac618325", 1500, 2.5, { x: -.2, y: -0.15 });
+			}, 1000)
+		}
+		if(tourStep === 6) {		
+			clearFilter();
 		}
 	});
 	
@@ -263,6 +285,7 @@
 
 	async function clearFilter() {
 		activeFilter = null;
+		controls.maxDistance = 300;
 		// Reset to default view or clear search
 		const views = await sootElement?.expose?.getViews();
 		if (views && views.length > 0) {
@@ -797,6 +820,8 @@
 						if (controls) {
 							console.log(controls)
 							controls.smoothZoomMode = 'SCROLL_TO_ZOOM';
+							controls.minDistance = .5;
+							controls.maxDistance = 300;
 							// controls.zoomSpeed = 10;
 							// controls.panSpeed = .7;
 							// controls.scrollToZoomSpeed = 0.00030;
@@ -1189,7 +1214,7 @@
 								<p>{@html paragraph.value}</p>
 							{/each}
 						</div>
-						{#if tourStep <= tourText.length - 1}
+						{#if tourStep < tourText.length - 1}
 							<button class="tour-button" onclick={() => { 
 								tourStep++;
 								
