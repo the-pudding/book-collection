@@ -12,10 +12,18 @@
 
 
 	let sootElement;
+	let loaded = $state(false);
+	let loadingImageIndex = $state(0);
+	let loadingPhase = $state('loading');  // 'loading' | 'fadeImages' | 'fadeBackground' | 'done'
+	let loadingVisible = $state(true);
 	let metadataLookup = {};
+	
+	// Sample menu image IDs for loading carousel
+	const loadingMenuImages = ['466953'];
+	const LOADING_CYCLE_MS = 1500;
 	let currentLayout = null;
 	let autocompletes = [];
-	let controls = null;
+	let controls = $state(null);
 	let css = null;  // compactSpaceScene reference for zooming
 	let lastSearchText = null;
 	let searchInput = "";
@@ -29,6 +37,29 @@
 	let geocoder;
 	let tour = $state(true);
 	let tourMinimized = $state(false);
+	let showControlsPanel = $state(false);
+
+	// Controls tuning - adjustable via GUI
+	let controlSettings = $state({
+		staticMoving: true,
+		dynamicDampingFactor: 0.45,
+		dynamicDampingFactorWhilePanning: 0.4,
+		dynamicDampingFactorWhileWheelPanning: 0.7,
+		panSpeed: 0.4,
+		scrollToZoomSpeed: 0.00025,
+		zoomSpeed: 2.4
+	});
+
+	// $effect(() => {
+		// if (!controls) return;
+		// controls.staticMoving = controlSettings.staticMoving;
+		// controls.dynamicDampingFactor = controlSettings.dynamicDampingFactor;
+		// controls.dynamicDampingFactorWhilePanning = controlSettings.dynamicDampingFactorWhilePanning;
+		// controls.dynamicDampingFactorWhileWheelPanning = controlSettings.dynamicDampingFactorWhileWheelPanning;
+		// controls.panSpeed = controlSettings.panSpeed;
+		// controls.scrollToZoomSpeed = controlSettings.scrollToZoomSpeed;
+		// controls.zoomSpeed = controlSettings.zoomSpeed;
+	// });
 
 	let aspectRatioMap = $state(new Map());
 
@@ -190,6 +221,30 @@
 		}
 	});
 	
+	// Cycle through loading images
+	$effect(() => {
+		if (loaded) return;
+		let idx = 0;
+		const interval = setInterval(() => {
+			idx = (idx + 1) % loadingMenuImages.length;
+			loadingImageIndex = idx;
+		}, LOADING_CYCLE_MS);
+		return () => clearInterval(interval);
+	});
+	
+	// Two-phase fade out when loaded: 1s fade images, then 1s fade background
+	$effect(() => {
+		if (!loaded) return;
+		loadingPhase = 'fadeImages';
+		const t1 = setTimeout(() => {
+			loadingPhase = 'done';
+			loadingVisible = false;
+		}, 1000);
+		return () => {
+			clearTimeout(t1);
+		};
+	});
+	
 	// Category labels with screen positions
 	let screenLabels = $state([]);
 	let labelsVisible = $state(true);
@@ -272,12 +327,14 @@
 	}
 
 	async function filter(location){
+		// Decode first in case value is already URL-encoded (e.g. from metadata)
+		const decoded = (() => {
+			try { return decodeURIComponent(location); } catch { return location; }
+		})();
 		// Set active filter
-		activeFilter = { raw: location, label: location };
-		// Ensure location is urlencoded before sending to executeSearch
-		const encodedLocation = encodeURIComponent(location);
-
-		console.log('encodedLocation', encodedLocation);
+		activeFilter = { raw: decoded, label: decoded };
+		// Encode once for executeSearch
+		const encodedLocation = encodeURIComponent(decoded);
 
 		await sootElement?.expose?.executeSearch(encodedLocation);
 		
@@ -315,6 +372,11 @@
 			geocoder.off('result');
 		}
 		// Create local geocoder function for autocomplete
+		const decodeDisplay = (s) => {
+			try { return decodeURIComponent(s); } catch { return s; }
+		};
+
+		// Geocoder uses only citiesList and statesList - no other sources
 		const localGeocoder = (query) => {
 			const queryLower = query.toLowerCase().trim();
 			
@@ -322,41 +384,27 @@
 				return [];
 			}
 
-			let matches = cities
-				.filter(city => city.toLowerCase().includes(queryLower))
+			const cityMatches = cities
+				.filter(city => city.toLowerCase().includes(queryLower) || decodeDisplay(city).toLowerCase().includes(queryLower))
 				.slice(0, 3)
 				.map(city => ({
 					type: 'Feature',
-					geometry: {
-						type: 'Point',
-						coordinates: [0, 0]
-					},
-					place_name: city,
-					properties: {
-						location: city
-					}
+					geometry: { type: 'Point', coordinates: [0, 0] },
+					place_name: decodeDisplay(city),
+					properties: { location: city }
 				}));
 
-			// Also append state matches
-			if (states && Array.isArray(states)) {
-				const stateMatches = states
-					.filter(state => state.toLowerCase().includes(queryLower))
-					.slice(0, 2)
-					.map(state => ({
-						type: 'Feature',
-						geometry: {
-							type: 'Point',
-							coordinates: [0, 0]
-						},
-						place_name: state,
-						properties: {
-							location: state
-						}
-					}));
-				matches = matches.concat(stateMatches);
-			}
+			const stateMatches = (states || [])
+				.filter(state => state.toLowerCase().includes(queryLower) || decodeDisplay(state).toLowerCase().includes(queryLower))
+				.slice(0, 2)
+				.map(state => ({
+					type: 'Feature',
+					geometry: { type: 'Point', coordinates: [0, 0] },
+					place_name: decodeDisplay(state),
+					properties: { location: state }
+				}));
 
-			return matches;
+			return [...cityMatches, ...stateMatches];
 		};
 
 		// Initialize Mapbox Geocoder with localGeocoder for autocomplete
@@ -370,13 +418,18 @@
 			marker: false,
 			zoom: 0,
 			minLength: 0, // Show suggestions immediately
-			limit: 5 // Limit number of suggestions
+			limit: 5, // Limit number of suggestions
+			render: (item) => {
+				const name = (item.place_name || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+				return `<div class="mapboxgl-ctrl-geocoder--suggestion"><div class="mapboxgl-ctrl-geocoder--suggestion-title">${name}</div></div>`;
+			}
 		});
 
 		// Handle result selection
 		geocoder.on('result', (e) => {
 			const result = e.result;
 			if (result.properties?.location) {
+				console.log('result.properties.location', result.properties.location);
 				filter(result.properties.location);
 			}
 		});
@@ -390,18 +443,20 @@
 		const geocoderElement = geocoder.onAdd();
 		geocoderContainer.appendChild(geocoderElement);
 		
-		// Create a Set of valid city names for quick lookup
-		const validCityNames = new Set(cities);
+		// Valid display names (decoded) for suggestion validation
+		const validDisplayNames = new Set([
+			...cities.map(decodeDisplay),
+			...(states || []).map(decodeDisplay)
+		]);
 		
 		// Use MutationObserver to filter out invalid suggestions in real-time
 		const suggestionsContainer = geocoderElement.querySelector('.mapboxgl-ctrl-geocoder--suggestions');
 		if (suggestionsContainer) {
 			const observer = new MutationObserver(() => {
-				// Filter suggestions that don't match our local data
 				const suggestions = suggestionsContainer.querySelectorAll('.mapboxgl-ctrl-geocoder--suggestion');
 				suggestions.forEach(suggestion => {
 					const placeName = suggestion.textContent?.trim() || suggestion.innerText?.trim();
-					if (placeName && !validCityNames.has(placeName)) {
+					if (placeName && !validDisplayNames.has(placeName)) {
 						suggestion.remove();
 					}
 				});
@@ -418,16 +473,15 @@
 			if (e.results && Array.isArray(e.results)) {
 				const invalidCount = e.results.filter(result => {
 					const placeName = result.place_name;
-					return placeName && !validCityNames.has(placeName);
+					return placeName && !validDisplayNames.has(placeName);
 				}).length;
 				
 				if (invalidCount > 0) {
-					// Remove invalid suggestions from DOM
 					setTimeout(() => {
 						const suggestions = geocoderElement.querySelectorAll('.mapboxgl-ctrl-geocoder--suggestion');
 						suggestions.forEach(suggestion => {
 							const placeName = suggestion.textContent?.trim() || suggestion.innerText?.trim();
-							if (placeName && !validCityNames.has(placeName)) {
+							if (placeName && !validDisplayNames.has(placeName)) {
 								suggestion.remove();
 							}
 						});
@@ -451,8 +505,8 @@
 						const citiesSet = new Set();
 						const statesSet = new Set();
 						metaData.forEach(row => {
-							if (row.city && row.city.trim() !== '') {
-								citiesSet.add(row.city.trim());
+							if (row.geography_city && row.geography_city.trim() !== '') {
+								citiesSet.add(row.geography_city.trim());
 							}
 							if (row.state && row.state.trim() !== '') {
 								statesSet.add(row.state.trim());
@@ -518,9 +572,10 @@
 			})();
 
 			sootElement.addEventListener('loadComplete', async (e) => {
-				console.log(sootElement.expose)
+				// console.log(sootElement.expose)
 				const views = await sootElement?.expose?.getViews();
-				console.log(views)
+				// console.log(views)
+				loaded = true;
 
 				if (views && views.length > 0) {
 					// Build viewsById lookup object
@@ -818,18 +873,18 @@
 						}
 						
 						if (controls) {
-							console.log(controls)
 							controls.smoothZoomMode = 'SCROLL_TO_ZOOM';
 							controls.minDistance = .5;
 							controls.maxDistance = 300;
-							// controls.zoomSpeed = 10;
-							// controls.panSpeed = .7;
-							// controls.scrollToZoomSpeed = 0.00030;
-							// controls.dynamicDampingFactor = .0005;
-							// controls.dynamicDampingFactorWhilePanning = 0;
-							// controls.dynamicDampingFactorWhileWheelPanning = 0;
-							// console.log('✅ Zoom-on-scroll enabled!');
-							// console.log('Controls:', controls);
+							controls.dynamicDampingFactor = .4;
+							controls.dynamicDampingFactorWhilePanning = .9;
+							controls.dynamicDampingFactorWhileWheelPanning = .7;
+							controls.panSpeed = .3;
+							controls.scrollToZoomSpeed = 0.00040;
+							controls.zoomSpeed = 2;
+							controls.staticMoving = false;
+							console.log('controls', controls);
+							// Tuning params applied via $effect from controlSettings
 						} else {
 							console.warn('⚠️ Could not find controls in component tree');
 							console.log('💡 Available properties on sootElement:', Object.keys(sootElement));
@@ -1170,19 +1225,22 @@
 
 <svelte:boundary onerror={(e) => console.error(e)}>
 
-	{#if menuData}
-		<div style="position: fixed; height:100px; z-index: 10000000; margin-top: 100px; overflow-y: scroll;">
-			{#each menuData.slice(0,100) as menuPage, index}
-				<!-- <button style="display: block;" on:click={() => {
-					showModal = true;
-					instanceSelected = menuPage.image_id;
-				}}>
-					{menuPage.image_id}
-				</button> -->
-			{/each}
+
+
+	{#if loadingVisible}
+		<Header />
+		<div transition:fade={{duration: 300}} class="loading-container">
+			<p>Loading...</p>
+			<div class="loading-carousel">
+					<img 
+						class="loading-menu-image"
+						src="https://s3.us-east-1.amazonaws.com/pudding.cool/menu-images/{loadingMenuImages[loadingImageIndex]}.jpg"
+						alt="Loading menu"
+						transition:fade={{duration: 300}}
+					/>
+			</div>
 		</div>
 	{/if}
-
 
 	<div class="modal-container {showModal ? 'show-modal' : 'hide-modal'}">
 		<Modal bind:showModal {instanceSelected} relatedMetadata={relatedImageIds[1]} relatedImageIds={relatedImageIds[0]} {sootElement} aspectRatioMap={aspectRatioMap}/>
@@ -1196,11 +1254,14 @@
 		bind:this={sootElement}
 		slug="d4758735-2d66-49bb-bbb4-3f3f4bf9085b"
 	>
-	<div slot="overlay-container">
-	</div>
+		<div slot="overlay-container">
+		</div>
+	
+
 			<div slot="viewslist">
-				{#if tour}
 				<Header />
+
+				{#if tour && loaded}
 
 					<div 
 						class="tour-container {tourMinimized ? 'minimized' : ''}"
@@ -1214,25 +1275,24 @@
 								<p>{@html paragraph.value}</p>
 							{/each}
 						</div>
-						{#if tourStep < tourText.length - 1}
-							<button class="tour-button" onclick={() => { 
-								tourStep++;
-								
-								// animalFilter("rare"); 
-							}}>
-								{tourText[tourStep].section}
-								<div class="tour-arrow-right">
-									<ChevronRight size="30" strokeWidth="1.7" color="#000" />
-								</div>	
-							</button>
-						{/if}
-						<!-- {#if tourStep > 0}
-							<button class="tour-button" onclick={() => tourStep--}>
-								<div class="tour-arrow-left">
-									<ChevronLeft size="15" strokeWidth="1.2" color="#000" />
-								</div>
-							</button>
-						{/if} -->
+						<div class="tour-buttons">
+							{#if tourStep > 0}
+								<button class="tour-button tour-button-back" onclick={() => tourStep--}>
+									<div class="tour-arrow-left">
+										<ChevronLeft size="30" strokeWidth="1.7" color="#000" />
+									</div>
+									<!-- {tourText[tourStep - 1].section} -->
+								</button>
+							{/if}
+							{#if tourStep < tourText.length - 1}
+								<button class="tour-button" style="margin-inline-start: auto;" onclick={() => tourStep++}>
+									{tourText[tourStep].section}
+									<div class="tour-arrow-right">
+										<ChevronRight size="30" strokeWidth="1.7" color="#000" />
+									</div>	
+								</button>
+							{/if}
+						</div>
 						{#if tourMinimized}
 							<div class="tour-tab">TAP/CLICK TO CONTINUE TOUR</div>
 						{/if}
@@ -1267,13 +1327,73 @@
 				</button> -->
 			
 				<!-- <button style="top: 0; position:fixed; z-index: 10000000;" class="modal-button" on:click={showModal = true}>Show Modal</button> -->
+				<!-- Controls tuning panel -->
+				{#if loaded}
+					<button 
+						class="controls-panel-toggle"
+						onclick={() => showControlsPanel = !showControlsPanel}
+						title="Pan/zoom settings"
+					>
+						{showControlsPanel ? '▼' : '⚙'}
+					</button>
+					{#if showControlsPanel}
+						<div class="controls-panel">
+							<h4>Pan/Zoom Tuning</h4>
+							<label class="toggle-row">
+								<span>staticMoving (instant)</span>
+								<button 
+									class="toggle-btn {controlSettings.staticMoving ? 'on' : 'off'}"
+									onclick={() => controlSettings.staticMoving = !controlSettings.staticMoving}
+								>
+									{controlSettings.staticMoving ? 'ON' : 'OFF'}
+								</button>
+							</label>
+							<label>
+								dynamicDampingFactor: {controlSettings.dynamicDampingFactor.toFixed(2)}
+								<input type="range" min="0" max="1" step="0.05" value={controlSettings.dynamicDampingFactor} oninput={(e) => controlSettings.dynamicDampingFactor = parseFloat(e.target.value)} />
+							</label>
+							<label>
+								dynamicDampingFactorWhilePanning: {controlSettings.dynamicDampingFactorWhilePanning.toFixed(2)}
+								<input type="range" min="0" max="1" step="0.05" value={controlSettings.dynamicDampingFactorWhilePanning} oninput={(e) => controlSettings.dynamicDampingFactorWhilePanning = parseFloat(e.target.value)} />
+							</label>
+							<label>
+								dynamicDampingFactorWhileWheelPanning: {controlSettings.dynamicDampingFactorWhileWheelPanning.toFixed(2)}
+								<input type="range" min="0" max="1" step="0.05" value={controlSettings.dynamicDampingFactorWhileWheelPanning} oninput={(e) => controlSettings.dynamicDampingFactorWhileWheelPanning = parseFloat(e.target.value)} />
+							</label>
+							<label>
+								panSpeed: {controlSettings.panSpeed.toFixed(2)}
+								<input type="range" min="0.1" max="2" step="0.05" value={controlSettings.panSpeed} oninput={(e) => controlSettings.panSpeed = parseFloat(e.target.value)} />
+							</label>
+							<label>
+								scrollToZoomSpeed: {controlSettings.scrollToZoomSpeed.toFixed(5)}
+								<input type="range" min="0.00005" max="0.001" step="0.00005" value={controlSettings.scrollToZoomSpeed} oninput={(e) => controlSettings.scrollToZoomSpeed = parseFloat(e.target.value)} />
+							</label>
+							<label>
+								zoomSpeed: {controlSettings.zoomSpeed.toFixed(2)}
+								<input type="range" min="0.5" max="5" step="0.1" value={controlSettings.zoomSpeed} oninput={(e) => controlSettings.zoomSpeed = parseFloat(e.target.value)} />
+							</label>
+							<button class="controls-reset" onclick={() => {
+								controlSettings = {
+									staticMoving: true,
+									dynamicDampingFactor: 0.45,
+									dynamicDampingFactorWhilePanning: 0.4,
+									dynamicDampingFactorWhileWheelPanning: 0.7,
+									panSpeed: 0.4,
+									scrollToZoomSpeed: 0.00025,
+									zoomSpeed: 2.4
+								};
+							}}>Reset</button>
+						</div>
+					{/if}
+				{/if}
+
 				<div class="geocoder-container" style="visibility: {tourMinimized ? 'visible' : 'hidden'};" bind:this={geocoderContainer}>
 					{#if citiesList}
 						<div class="filter-container">
 							{#if activeFilter}
 								<!-- Show active filter with X button -->
 								<button class="filter-button active-filter" onclick={clearFilter}>
-									{activeFilter.label} <span class="clear-x">×</span>
+									{decodeURIComponent(activeFilter.label)} <span class="clear-x">×</span>
 								</button>
 							{:else}
 								<!-- Showfind all filter buttons -->
@@ -1380,7 +1500,7 @@
 	}
 	.geocoder-container {
 		position: absolute;
-		top: 10px;
+		top: 70px;
 		left: 10px;
 		width: 300px;
 		z-index: 10000001;
@@ -1469,6 +1589,92 @@
 	.clear-x:hover {
 		color: #ff6666;
 	}
+
+	/* Controls tuning panel */
+	.controls-panel-toggle {
+		position: fixed;
+		top: 10px;
+		right: 10px;
+		z-index: 10000004;
+		width: 36px;
+		height: 36px;
+		border-radius: 6px;
+		border: 1px solid rgba(0,0,0,0.2);
+		background: rgba(255,255,255,0.9);
+		cursor: pointer;
+		font-size: 18px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+	}
+	.controls-panel-toggle:hover {
+		background: rgba(255,255,255,1);
+	}
+	.controls-panel {
+		position: fixed;
+		top: 52px;
+		right: 10px;
+		z-index: 10000004;
+		width: 320px;
+		max-height: 80vh;
+		overflow-y: auto;
+		background: rgba(255,255,255,0.98);
+		border-radius: 8px;
+		border: 1px solid rgba(0,0,0,0.15);
+		box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+		padding: 1rem 1.25rem;
+		font-family: 'Atlas Typewriter', monospace;
+		font-size: 12px;
+	}
+	.controls-panel h4 {
+		margin: 0 0 0.75rem 0;
+		font-size: 13px;
+	}
+	.controls-panel label {
+		display: block;
+		margin-bottom: 0.75rem;
+	}
+	.controls-panel label input[type="range"] {
+		display: block;
+		width: 100%;
+		margin-top: 0.25rem;
+	}
+	.controls-panel .toggle-row {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		gap: 0.5rem;
+	}
+	.controls-panel .toggle-btn {
+		padding: 0.25rem 0.6rem;
+		font-size: 11px;
+		font-weight: 600;
+		border: 1px solid #ccc;
+		border-radius: 4px;
+		cursor: pointer;
+		min-width: 44px;
+	}
+	.controls-panel .toggle-btn.on {
+		background: #333;
+		color: white;
+		border-color: #333;
+	}
+	.controls-panel .toggle-btn.off {
+		background: #f0f0f0;
+		color: #666;
+	}
+	.controls-reset {
+		margin-top: 0.75rem;
+		padding: 0.35rem 0.75rem;
+		font-size: 11px;
+		cursor: pointer;
+		background: #333;
+		color: white;
+		border: none;
+		border-radius: 4px;
+	}
+
 	.soot-publication-hide {
 		/* visibility: hidden; */
 	}
@@ -1491,6 +1697,47 @@
 	.modal-container.show-modal {
 		/* visibility: visible; */
 		transform: translate(0,0);
+	}
+
+	/* Loading state */
+	.loading-container {
+		position: fixed;
+		inset: 0;
+		z-index: 10000003;
+		display: flex;
+		font-family: 'Atlas Typewriter', monospace;
+		align-items: center;
+		justify-content: center;
+		flex-direction: column;
+		background: rgba(255, 255, 255, .5);
+		-webkit-backdrop-filter: blur(0.5rem);
+		backdrop-filter: blur(0.5rem);
+		transition: opacity 1s ease-out;
+	}
+	
+	.loading-container.loading-fade-images .loading-carousel {
+		opacity: 0;
+		transition: opacity 1s ease-out;
+	}
+	
+	.loading-container.loading-fade-background {
+		opacity: 0;
+	}
+	
+	.loading-carousel {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: min(90vw, 400px);
+		height: min(80vh, 500px);
+		transition: opacity 1s ease-out;
+	}
+	
+	.loading-menu-image {
+		max-width: 100%;
+		max-height: 100%;
+		object-fit: contain;
+		box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
 	}
 
 	/* Category Labels Overlay */
@@ -1538,6 +1785,15 @@
 		border-radius: 2px;
 	}
 
+	.tour-buttons {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		gap: 1rem;
+		width: 100%;
+		margin-top: 0.5rem;
+	}
+
 	.tour-button {
 		background: none;
 		border: none;
@@ -1545,14 +1801,18 @@
 		padding: 0;
 		margin: 0;
 		font-size: 16px;
-		display:flex;
+		display: flex;
 		font-weight: 600;
 		letter-spacing: -0.02em;
-		justify-content:flex-end;
+		justify-content: flex-end;
 		-webkit-font-smoothing: antialiased;
 		-moz-osx-font-smoothing: grayscale;
 		align-items: center;
-		width: 100%;
+		/* flex: 1; */
+	}
+
+	.tour-button-back {
+		justify-content: flex-start;
 	}
 
 	:global(.tour-button svg) {

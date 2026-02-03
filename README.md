@@ -1,27 +1,16 @@
+* put static images for loading screen in compressed format and local to repo
+
+
+
 FOR TOUR
-new categories (saved view)
-- restaurants
-- events
-- ships
 
 key menus (tag)
  - norway, etc.
 
- racist menus (tag)
-
  abundance (tag)
-
 
 - create new dataset that includes ships, change to only go to 1924.
 - 
-
-
-
-
-
-maybe add back in 40s for ww22
-
-transcribe ship or cruise??
 
 *****need to analyze menu items for each page. create list of related image ids map -- pull image items using existing csv...this will be a map of items to the parent image_id...run anakysis and explanatino on that..
 
@@ -30,8 +19,6 @@ run familiarity anlaysis: trying to get to define items.
 
 offensive things??
 but what if that's the point...like chinese food that's old? or takes on other culture's food? like italian? first mention of pizza? or collactions--where became more popular as a luxury item...like lobster?
-coinsider changing to pre 1950—has a sort of charm to just having that data...
-
 
 # mapping of image_id to other image_ids
 menu-page-aggregated-ids.json
