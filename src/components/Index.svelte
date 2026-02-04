@@ -216,12 +216,15 @@
 	// Watch for tourStep changes and apply filters
 	$effect(() => {
 
+		// console.log(tourStep, 'tourStep');
+		// filter("focus")
+
 		if (tourStep === 1) {
 			changeFilterByIndex(2);
 		}
 		if(tourStep === 2) {
 			// controls.maxDistance = 2.5;
-			filter("focus")
+			filterTag("focus")
 			setTimeout(() => {
 				zoomToInstance(controls, css, "de0e09c1-172d-4e38-ae5a-ddf243184d77", 600, 1, { x: -.5, y: -.3 });
 				// setTimeout(() => {
@@ -230,19 +233,19 @@
 			}, 1000)
 		}
 		if(tourStep === 3) {		
-			filter("delmonicos");
+			filterTag("delmonicos");
 			setTimeout(() => {
 				zoomToInstance(controls, css, "e26ff4ec-017d-4f31-9745-3cc6ac618325", 1500, 2.5, { x: -.2, y: -0.15 });
 			}, 1000)
 		}
 		if(tourStep === 4) {			
-			filter("off");
+			filterTag("off");
 			setTimeout(() => {
 				zoomToInstance(controls, css, "ec6eb893-c3d9-49d5-af49-c1c2aa036bd4", 1500, 2.5, { x: -.2, y: -0.15 });
 			}, 1000)
 		}
 		if(tourStep === 5) {		
-			filter("hist");
+			filterTag("hist");
 			setTimeout(() => {
 				zoomToInstance(controls, css, "e26ff4ec-017d-4f31-9745-3cc6ac618325", 1500, 2.5, { x: -.2, y: -0.15 });
 			}, 1000)
@@ -354,7 +357,11 @@
 		activeFilter = { raw: animal, label: animal };
 
 		await sootElement?.expose?.executeSearch(animal);
+	}
 
+	async function filterTag(tag){
+		console.log('filterTag', tag);
+		await sootElement?.expose?.executeSearch(tag);
 	}
 	
 	async function filter(location){
@@ -370,7 +377,7 @@
 
 		console.log(encodedLocation);
 
-		await sootElement?.expose?.executeSearch("New%20York");
+		await sootElement?.expose?.executeSearch(encodedLocation);
 		
 	}
 
@@ -1777,7 +1784,7 @@
 		height: 32px;
 		border-radius: 6px;
 		border: 1px solid rgba(0,0,0,0.2);
-		background: rgba(255,255,255,0.9);
+		background: rgba(255,255,255,1);
 		cursor: pointer;
 		font-size: 16px;
 		display: flex;
