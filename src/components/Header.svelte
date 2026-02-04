@@ -28,7 +28,7 @@
 		pointer-events: auto;
 		margin: 0;
 		padding: 36px;
-		transform: rotate(-4deg);
+		transform: translate(0, -19px) rotate(-4deg);
 	}
 
 	.wordmark a {

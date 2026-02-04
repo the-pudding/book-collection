@@ -35,6 +35,7 @@
 	let activeFilter = $state(null); // Track the currently selected filter
 	let geocoderContainer;
 	let geocoder;
+	let lastTouchEndTime = 0;
 	let tour = $state(true);
 	let tourMinimized = $state(false);
 	let showControlsPanel = $state(false);
@@ -142,6 +143,36 @@
 	// Smooth zoom to a specific instance
 	// zoomDistance: how far camera sits from instance (smaller = more zoomed in)
 	// offsetPerZoom: nudge camera right/up per unit of zoom (e.g. {x: 0.02, y: 0.02})
+	// Dispatch synthetic arrow key events so Soot's controls handle panning with smooth damping
+	function panCanvas(direction) {
+		const keyMap = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: 'ArrowDown' };
+		const code = keyMap[direction];
+		if (!code) return;
+		const evt = new KeyboardEvent('keydown', { key: code, code, bubbles: true });
+		window.dispatchEvent(evt);
+	}
+
+	// Dispatch synthetic wheel events so Soot's controls handle zooming with smooth damping
+	function zoomCanvas(direction) {
+		if (!controls?.domElement) return;
+		const el = controls.domElement;
+		const rect = el.getBoundingClientRect();
+		const pageX = rect.left + rect.width / 2;
+		const pageY = rect.top + rect.height / 2;
+		const deltaY = direction === 'in' ? -100 : 100;
+		const evt = new WheelEvent('wheel', {
+			deltaY,
+			deltaMode: 0,
+			clientX: rect.left + rect.width / 2,
+			clientY: rect.top + rect.height / 2,
+			pageX,
+			pageY,
+			bubbles: true,
+			cancelable: true
+		});
+		el.dispatchEvent(evt);
+	}
+
 	function zoomToInstance(controls, css, instanceId, duration = 600, zoomDistance = 10, offsetPerZoom = { x: 0.02, y: 0.02 }) {
 		const position = css.getInstancePosition(instanceId);
 		if (!position) return;
@@ -325,8 +356,9 @@
 		await sootElement?.expose?.executeSearch(animal);
 
 	}
-
+	
 	async function filter(location){
+		console.log('filter', location);
 		// Decode first in case value is already URL-encoded (e.g. from metadata)
 		const decoded = (() => {
 			try { return decodeURIComponent(location); } catch { return location; }
@@ -336,13 +368,16 @@
 		// Encode once for executeSearch
 		const encodedLocation = encodeURIComponent(decoded);
 
-		await sootElement?.expose?.executeSearch(encodedLocation);
+		console.log(encodedLocation);
+
+		await sootElement?.expose?.executeSearch("New%20York");
 		
 	}
 
 	async function clearFilter() {
 		activeFilter = null;
 		controls.maxDistance = 300;
+		
 		// Reset to default view or clear search
 		const views = await sootElement?.expose?.getViews();
 		if (views && views.length > 0) {
@@ -1156,11 +1191,22 @@
 					}
 				}, 2000); // Wait for full initialization
 
+				// Prevent instance selection when triggered by touchend (e.g. accidental touch)
+				window.addEventListener('mousedown', () => { 
+					lastTouchEndTime = Date.now(); 
+					console.log('touchend', lastTouchEndTime);
+				}, { passive: true });
+
 				sootElement.addEventListener("selectInstance", async (event) => {
-					instanceSelected = await sootElement?.expose?.getInstanceDetails(event.detail.eventData.instanceId);
-					console.log(instanceSelected)
-					showModal = true;
-				});
+					const fromTouch = Date.now() - lastTouchEndTime < 250;
+
+					console.log(fromTouch);
+					if (fromTouch) {
+						instanceSelected = await sootElement?.expose?.getInstanceDetails(event.detail.eventData.instanceId);
+						console.log(instanceSelected)
+						showModal = true;
+					}
+				}, true);
 				
 				sootElement.addEventListener('changeLayout', (e) => {
 
@@ -1329,15 +1375,17 @@
 				<!-- <button style="top: 0; position:fixed; z-index: 10000000;" class="modal-button" on:click={showModal = true}>Show Modal</button> -->
 				<!-- Controls tuning panel -->
 				{#if loaded}
-					<button 
-						class="controls-panel-toggle"
-						onclick={() => showControlsPanel = !showControlsPanel}
-						title="Pan/zoom settings"
-					>
-						{showControlsPanel ? '▼' : '⚙'}
-					</button>
-					{#if showControlsPanel}
-						<div class="controls-panel">
+					<div class="controls-area">
+						<div class="title-text">5,000 menus from 1880-1920</div>
+						<button 
+							class="controls-panel-toggle"
+							onclick={() => showControlsPanel = !showControlsPanel}
+							title="Pan/zoom settings"
+						>
+							{showControlsPanel ? '▼' : '⚙'}
+						</button>
+						{#if showControlsPanel}
+							<div class="controls-panel">
 							<h4>Pan/Zoom Tuning</h4>
 							<label class="toggle-row">
 								<span>staticMoving (instant)</span>
@@ -1383,8 +1431,25 @@
 									zoomSpeed: 2.4
 								};
 							}}>Reset</button>
+							</div>
+						{/if}
+						<div class="pan-zoom-buttons">
+							<div class="pan-buttons">
+								<div class="pan-row pan-row-top">
+									<button class="pan-btn" onclick={() => panCanvas('up')} title="Pan up">↑</button>
+								</div>
+								<div class="pan-row">
+									<button class="pan-btn" onclick={() => panCanvas('left')} title="Pan left">←</button>
+									<button class="pan-btn" onclick={() => panCanvas('down')} title="Pan down">↓</button>
+									<button class="pan-btn" onclick={() => panCanvas('right')} title="Pan right">→</button>
+								</div>
+							</div>
+							<div class="zoom-buttons">
+								<button class="pan-btn" onclick={() => zoomCanvas('in')} title="Zoom in">+</button>
+								<button class="pan-btn" onclick={() => zoomCanvas('out')} title="Zoom out">−</button>
+							</div>
 						</div>
-					{/if}
+					</div>
 				{/if}
 
 				<div class="geocoder-container" style="visibility: {tourMinimized ? 'visible' : 'hidden'};" bind:this={geocoderContainer}>
@@ -1500,7 +1565,7 @@
 	}
 	.geocoder-container {
 		position: absolute;
-		top: 70px;
+		top: 50px;
 		left: 10px;
 		width: 300px;
 		z-index: 10000001;
@@ -1511,8 +1576,8 @@
 		backdrop-filter: blur(2rem);
 		background-color: #bababa33;
 		border-radius: .2rem;
-		clip-path: inset(0px round .2rem);
 		padding: 1rem;
+		overflow: visible;
 	}
 
 	.geocoder-container :global(.mapboxgl-ctrl-geocoder) {
@@ -1591,11 +1656,32 @@
 	}
 
 	/* Controls tuning panel */
-	.controls-panel-toggle {
+	.controls-area {
 		position: fixed;
 		top: 10px;
 		right: 10px;
 		z-index: 10000004;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 6px;
+	}
+	.title-text {
+		font-family: 'Atlas Grotesk', sans-serif;
+		font-size: 16px;
+		line-height: 1.3;
+		font-weight: 600;
+		color: #333;
+		text-align: center;
+		/* white-space: nowrap; */
+		padding: 0;
+		width: 130px;
+		margin: 0;
+		margin-bottom: 7px;
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
+	}
+	.controls-panel-toggle {
 		width: 36px;
 		height: 36px;
 		border-radius: 6px;
@@ -1607,15 +1693,12 @@
 		align-items: center;
 		justify-content: center;
 		box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+		display: none;
 	}
 	.controls-panel-toggle:hover {
 		background: rgba(255,255,255,1);
 	}
 	.controls-panel {
-		position: fixed;
-		top: 52px;
-		right: 10px;
-		z-index: 10000004;
 		width: 320px;
 		max-height: 80vh;
 		overflow-y: auto;
@@ -1663,6 +1746,47 @@
 	.controls-panel .toggle-btn.off {
 		background: #f0f0f0;
 		color: #666;
+	}
+	.pan-zoom-buttons {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 6px;
+	}
+	.pan-buttons {
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		gap: 4px;
+		margin-bottom: 5px;
+		padding-bottom: 7px;
+		border-bottom: 1px solid #ccc;
+	}
+	.pan-row {
+		display: flex;
+		justify-content: center;
+		gap: 4px;
+	}
+	.zoom-buttons {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+	.pan-btn {
+		width: 32px;
+		height: 32px;
+		border-radius: 6px;
+		border: 1px solid rgba(0,0,0,0.2);
+		background: rgba(255,255,255,0.9);
+		cursor: pointer;
+		font-size: 16px;
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+	}
+	.pan-btn:hover {
+		background: rgba(255,255,255,1);
 	}
 	.controls-reset {
 		margin-top: 0.75rem;
