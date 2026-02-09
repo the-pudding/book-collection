@@ -32,7 +32,7 @@ const useClipboard = (copyString, config = {}) => {
 				await method(strToCopy);
 				return;
 			} catch (error) {
-				console.error("Copy method failed:", error);
+				// Copy method failed
 			}
 		}
 		throw new Error("Copy failed, browser not supported.");

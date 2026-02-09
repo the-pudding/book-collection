@@ -3,8 +3,8 @@
  * example:
  * <p
  * 	use:inView
- * 	on:enter={() => console.log("enter")}
- * 	on:exit={() => console.log("exit")}
+ * 	on:enter={() => {}}
+ * 	on:exit={() => {}}
  * >
  *
  * optional params { root, top, bottom, progress }

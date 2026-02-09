@@ -1,3 +1,6 @@
+add other metadata...squrill...
+finish images for tour
+
 * put static images for loading screen in compressed format and local to repo
 
 

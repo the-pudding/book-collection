@@ -9,9 +9,7 @@
 	import DemoLoadData from "$components/demo/Demo.LoadData.svelte";
 	let value = $state(0);
 
-	function onRandom(v) {
-		console.log(v);
-	}
+	function onRandom() {}
 </script>
 
 <div id="demo">

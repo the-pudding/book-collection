@@ -6,7 +6,7 @@
 	import metaData from "$data/metadata.csv";
 	import MapboxGeocoder from '@mapbox/mapbox-gl-geocoder';
 	import '@mapbox/mapbox-gl-geocoder/dist/mapbox-gl-geocoder.css';
-	import { Squirrel, Turtle, Bird, Brain, ChevronRight, ChevronLeft } from "@lucide/svelte";
+	import { Squirrel, Turtle, Bird, Brain, ChevronRight, ChevronLeft, ArrowUp, ArrowDown, ArrowLeft, ArrowRight } from "@lucide/svelte";
 	import Header from "$components/Header.svelte";
 	import { fade } from "svelte/transition";
 
@@ -88,6 +88,20 @@
 		2: 'Event'
 	};
 	
+
+	function getCity(city) {
+		let cityName = city.split(',')[0];
+		if(cityName == "New York") {
+			return "NYC";
+		}
+		if(cityName == "Los Angeles") {
+			return "LA";
+		}
+		if(cityName == "San Francisco") {
+			return "SF";
+		}
+		return cityName;
+	}
 	/**
 	 * Get the display label for a category based on the current savedLayout
 	 * @param {string|number} value - The raw label value
@@ -215,14 +229,15 @@
 
 	// Watch for tourStep changes and apply filters
 	$effect(() => {
-
-		// console.log(tourStep, 'tourStep');
 		// filter("focus")
-
-		if (tourStep === 1) {
-			changeFilterByIndex(2);
+		if(tourStep === 0) {
+			clearFilter();
 		}
-		if(tourStep === 2) {
+
+		// if (tourStep === 1) {
+		// 	changeFilterByIndex(2);
+		// }
+		if(tourStep === 1) {
 			// controls.maxDistance = 2.5;
 			filterTag("focus")
 			setTimeout(() => {
@@ -232,25 +247,25 @@
 				// }, 1000)
 			}, 1000)
 		}
-		if(tourStep === 3) {		
+		if(tourStep === 2) {		
 			filterTag("delmonicos");
 			setTimeout(() => {
 				zoomToInstance(controls, css, "e26ff4ec-017d-4f31-9745-3cc6ac618325", 1500, 2.5, { x: -.2, y: -0.15 });
 			}, 1000)
 		}
-		if(tourStep === 4) {			
+		if(tourStep === 3) {			
 			filterTag("off");
 			setTimeout(() => {
 				zoomToInstance(controls, css, "ec6eb893-c3d9-49d5-af49-c1c2aa036bd4", 1500, 2.5, { x: -.2, y: -0.15 });
 			}, 1000)
 		}
-		if(tourStep === 5) {		
+		if(tourStep === 4) {		
 			filterTag("hist");
 			setTimeout(() => {
 				zoomToInstance(controls, css, "e26ff4ec-017d-4f31-9745-3cc6ac618325", 1500, 2.5, { x: -.2, y: -0.15 });
 			}, 1000)
 		}
-		if(tourStep === 6) {		
+		if(tourStep === 5) {		
 			clearFilter();
 		}
 	});
@@ -309,37 +324,22 @@
 		if (typeof instanceSelected === 'string') {
 			// Direct image_id from manual button clicks
 			imageId = instanceSelected;
-			console.log('Using direct image ID:', imageId);
 		} else if (typeof instanceSelected === 'object' && instanceSelected.id) {
 			// Object from getInstanceDetails() - the id might be a SOOT UUID
 			// We need to extract the actual NYPL image ID from metadata
 			imageId = instanceSelected.editableMetadata.fileName.replace(".jpg", "");
-			console.log('Selected instance object:', instanceSelected);
-			console.log('Instance ID from SOOT:', imageId);
-			
-			// Check if there's a better image ID in the metadata
-			if (instanceSelected.editableMetadata?.fileName) {
-				console.log('Filename:', instanceSelected.editableMetadata.fileName);
-			}
 		}
 		
 		// Try to get related images using the instance ID
 		const related = getRelatedImageIds(imageId);
-		console.log('Related images for', imageId, ':', related);
 		
 		return related;
-	});
-
-	// Track when relatedImageIds changes
-	$effect(() => {
-		console.log('📦 Index: relatedImageIds updated:', relatedImageIds);
 	});
 
 	// Expose sootElement to window for console access
 	$effect(() => {
 		if (browser && sootElement) {
 			window.sootElement = sootElement;
-			console.log('✅ sootElement exposed to window. Access it with: window.sootElement or just sootElement');
 		}
 	});
 
@@ -360,12 +360,10 @@
 	}
 
 	async function filterTag(tag){
-		console.log('filterTag', tag);
 		await sootElement?.expose?.executeSearch(tag);
 	}
 	
 	async function filter(location){
-		console.log('filter', location);
 		// Decode first in case value is already URL-encoded (e.g. from metadata)
 		const decoded = (() => {
 			try { return decodeURIComponent(location); } catch { return location; }
@@ -375,15 +373,13 @@
 		// Encode once for executeSearch
 		const encodedLocation = encodeURIComponent(decoded);
 
-		console.log(encodedLocation);
-
 		await sootElement?.expose?.executeSearch(encodedLocation);
 		
 	}
 
 	async function clearFilter() {
 		activeFilter = null;
-		controls.maxDistance = 300;
+		// controls.maxDistance = 300;
 		
 		// Reset to default view or clear search
 		const views = await sootElement?.expose?.getViews();
@@ -471,14 +467,8 @@
 		geocoder.on('result', (e) => {
 			const result = e.result;
 			if (result.properties?.location) {
-				console.log('result.properties.location', result.properties.location);
 				filter(result.properties.location);
 			}
-		});
-
-		// Handle errors
-		geocoder.on('error', (e) => {
-			console.error('❌ Geocoder error:', e);
 		});
 
 		// Add geocoder to container
@@ -609,14 +599,12 @@
 										
 					menuDataLoaded = true;
 				} catch (error) {
-					console.error('❌ Error loading menu data:', error);
+					// Error loading menu data
 				}
 			})();
 
 			sootElement.addEventListener('loadComplete', async (e) => {
-				// console.log(sootElement.expose)
 				const views = await sootElement?.expose?.getViews();
-				// console.log(views)
 				loaded = true;
 
 				if (views && views.length > 0) {
@@ -758,7 +746,6 @@
 							}
 						} catch (e) {
 							// If there's an error, just continue searching
-							console.warn('⚠️ Error processing vnode:', e);
 						}
 						
 						return null;
@@ -827,7 +814,6 @@
 						
 						// Method 3: Try accessing through shadowRoot
 						if (!controls && sootElement.shadowRoot) {
-							console.log('🔍 Method 3: Searching through shadowRoot...');
 							// Look for Vue components in shadow DOM
 							const allElements = sootElement.shadowRoot.querySelectorAll('*');
 							for (const el of allElements) {
@@ -850,17 +836,14 @@
 						
 						// Method 4: Deep search through all possible Vue instance properties
 						if (!controls) {
-							console.log('🔍 Method 4: Deep search through all properties...');
 							const searchAllProperties = (obj, depth = 0, maxDepth = 5) => {
 								if (depth > maxDepth || !obj || typeof obj !== 'object') return null;
 								
 								// Check if this object has controls
 								if (obj.controls && obj.smoothZoomMode !== undefined) {
-									console.log('✅ Found controls in object at depth', depth);
 									return obj.controls;
 								}
 								if (obj.smoothZoomMode !== undefined && typeof obj.setSmoothZoomMode === 'function') {
-									console.log('✅ Found controls object at depth', depth);
 									return obj;
 								}
 								
@@ -893,24 +876,21 @@
 						
 						// Method 5: Try accessing through expose API (if it exists)
 						if (!controls && sootElement.expose) {
-							console.log('🔍 Method 5: Checking expose API...');
 							try {
 								// Some Vue components expose internal state
 								const exposeKeys = Object.keys(sootElement.expose);
-								console.log('Expose keys:', exposeKeys);
 								// Check if there's a controls or getControls method
 								for (const key of exposeKeys) {
 									if (key.toLowerCase().includes('control')) {
 										const val = sootElement.expose[key];
 										if (val && val.smoothZoomMode !== undefined) {
 											controls = val;
-											console.log('✅ Found controls in expose:', key);
 											break;
 										}
 									}
 								}
 							} catch (e) {
-								console.warn('⚠️ Error checking expose:', e);
+								// Error checking expose
 							}
 						}
 						
@@ -925,35 +905,24 @@
 							controls.scrollToZoomSpeed = 0.00040;
 							controls.zoomSpeed = 2;
 							controls.staticMoving = false;
-							console.log('controls', controls);
 							// Tuning params applied via $effect from controlSettings
-						} else {
-							console.warn('⚠️ Could not find controls in component tree');
-							console.log('💡 Available properties on sootElement:', Object.keys(sootElement));
-							console.log('💡 Try using Ctrl/Cmd+Scroll to zoom as a workaround');
 						}
 					} catch (error) {
-						console.error('❌ Error enabling zoom-on-scroll:', error);
+						// Error enabling zoom-on-scroll
 					}
 				}, 500); // Longer delay to ensure component tree is fully built
 
 				setTimeout(() => {
 					try {
-						console.group('🏷️ Setting up category labels...');
-						
 						// Use _instance which is available in both dev and production
 						const rootComp = sootElement._instance;
 						if (!rootComp) {
-							console.warn('Could not find root Vue component (_instance)');
-							console.groupEnd();
 							return;
 						}
 						
 						// Navigate: SootPublication -> SceneManager -> MainComponent
 						const sceneManager = rootComp.subTree?.children?.[0]?.component;
 						if (!sceneManager) {
-							console.warn('Could not find SceneManager');
-							console.groupEnd();
 							return;
 						}
 						
@@ -970,8 +939,6 @@
 								}
 							}
 							if (!found) {
-								console.warn('Could not find MainComponent');
-								console.groupEnd();
 								return;
 							}
 						}
@@ -981,8 +948,6 @@
 						const dataSource = actualMainComp?.ctx?.compactSpaceScene ? actualMainComp.ctx : actualMainComp?.props;
 						
 						if (!dataSource?.compactSpaceScene) {
-							console.warn('Could not find compactSpaceScene in ctx or props');
-							console.groupEnd();
 							return;
 						}
 						
@@ -994,8 +959,6 @@
 						const canvas = sootElement.shadowRoot.querySelector('canvas');
 						
 						if (!camera || !canvas || !controls) {
-							console.warn('Missing camera, canvas, or controls');
-							console.groupEnd();
 							return;
 						}
 						
@@ -1010,8 +973,6 @@
 						let currentCategoryView = Object.values(views).find(v => v.parameters?.type === 'CATEGORY');
 						
 						if (!currentCategoryView) {
-							console.warn('No CATEGORY view found');
-							console.groupEnd();
 							return;
 						}
 						
@@ -1022,7 +983,6 @@
 						// Function to rebuild category instances for a given property
 						function rebuildCategoryInstances(propertyId) {
 							if (propertyId === currentPropertyId) {
-								console.log('Same property, skipping rebuild');
 								return false; // No change
 							}
 							
@@ -1050,8 +1010,6 @@
 								}
 							}
 							
-							console.log(`Rebuilt categories for property ${propertyId}: found ${Object.keys(categoryInstances).length} categories`);
-							console.log(categoryInstances);
 							return true; // Changed
 						}
 						
@@ -1096,7 +1054,6 @@
 						
 						// Compute initial world positions
 						let worldLabels = computeWorldPositions();
-						console.log('Computed world positions for', worldLabels.length, 'categories');
 						
 						// Function to convert world to screen coordinates
 						function worldToScreen(worldPos) {
@@ -1152,16 +1109,11 @@
 								tourMinimized = true;
 							}
 						});
-						console.log('✅ Listening for camera changes');
 												
 						// Expose helper to toggle labels
 						window.toggleLabels = () => {
 							labelsVisible = !labelsVisible;
-							console.log('Labels visible:', labelsVisible);
 						};
-						
-						console.log('✅ Category labels set up successfully');
-						console.log('Use window.toggleLabels() to show/hide labels');
 						
 						// Listen for layout changes to recompute label positions and categories
 						sootElement.addEventListener('changeLayout', (e) => {
@@ -1190,82 +1142,45 @@
 							}
 						});
 						
-						console.groupEnd();
-						
 					} catch (error) {
-						console.error('❌ Error setting up category labels:', error);
-						console.groupEnd();
+						// Error setting up category labels
 					}
 				}, 2000); // Wait for full initialization
 
 				// Prevent instance selection when triggered by touchend (e.g. accidental touch)
 				window.addEventListener('mousedown', () => { 
 					lastTouchEndTime = Date.now(); 
-					console.log('touchend', lastTouchEndTime);
 				}, { passive: true });
 
 				sootElement.addEventListener("selectInstance", async (event) => {
 					const fromTouch = Date.now() - lastTouchEndTime < 250;
 
-					console.log(fromTouch);
 					if (fromTouch) {
 						instanceSelected = await sootElement?.expose?.getInstanceDetails(event.detail.eventData.instanceId);
-						console.log(instanceSelected)
 						showModal = true;
 					}
 				}, true);
 				
 				sootElement.addEventListener('changeLayout', (e) => {
-
-
-					console.group('🔄 Layout Changed');
-
 					const layout = e.detail.eventData.layout;
-					const triggerType = e.detail.eventData.triggerType;
-
-					console.log(e.detail)
-
-					console.log('Trigger Type:', triggerType);
-					console.log('New Layout:', layout);
 
 					if (layout.type === 'SAVED_VIEW') {
-						console.log('  └─ Layout Type: Saved View');
-						console.log('  └─ View ID:', layout.viewId);
-						if (layout.focusOnInstanceId) {
-							console.log('  └─ Focused Instance:', layout.focusOnInstanceId);
-						}
-						
 						// Update savedLayout if the viewId exists in viewsById
 						if (layout.viewId && viewsById[layout.viewId]) {
 							savedLayout = layout.viewId;
-							console.log('  └─ Updated savedLayout to:', savedLayout);
 						}
 					} else if (layout.type === 'SEARCH') {
-						console.log('  └─ Layout Type: Search');
-						console.log('  └─ Search Query Type:', layout.query.type);
 						if (layout.query.type === 'TEXT') {
-							console.log('  └─ Search Text:', layout.query.text);
 							lastSearchText = layout.query.text;
 						} else if (layout.query.type === 'SEE_SIMILAR') {
-							console.log('  └─ Similar to image');
 							lastSearchText = 'Similar to image';
 						} else if (layout.query.type === 'FILTER_TO_TAG') {
-							console.log('  └─ Tag ID:', layout.query.tagId);
-							console.log('  └─ Property ID:', layout.query.propertyId);
-							if (layout.query.instanceId) {
-								console.log('  └─ Instance ID:', layout.query.instanceId);
-							}
-							if (layout.query.objectVersionId) {
-								console.log('  └─ Object Version ID:', layout.query.objectVersionId);
-							}
 							lastSearchText = 'Filtered to tag';
 						} else if (layout.query.type === 'METADATA_SEARCH') {
-							console.log('  └─ Metadata search');
 							lastSearchText = 'Metadata search';
 						}
 					}
 
-					console.groupEnd();
 					currentLayout = layout;
 				});
 
@@ -1276,7 +1191,7 @@
 </script>
 
 
-<svelte:boundary onerror={(e) => console.error(e)}>
+<svelte:boundary onerror={() => {}}>
 
 
 
@@ -1316,6 +1231,8 @@
 
 				{#if tour && loaded}
 
+				
+
 					<div 
 						class="tour-container {tourMinimized ? 'minimized' : ''}"
 						onclick={() => { if (tourMinimized) tourMinimized = false; }}
@@ -1338,17 +1255,41 @@
 								</button>
 							{/if}
 							{#if tourStep < tourText.length - 1}
-								<button class="tour-button" style="margin-inline-start: auto;" onclick={() => tourStep++}>
+								<button class="tour-button" style="text-align: right; margin-inline-start: auto;" onclick={() => tourStep++}>
 									{tourText[tourStep].section}
 									<div class="tour-arrow-right">
 										<ChevronRight size="30" strokeWidth="1.7" color="#000" />
 									</div>	
 								</button>
 							{/if}
+							{#if tourStep == tourText.length - 1}
+								<button class="tour-button" style="margin-inline-start: auto;" onclick={(e) => { e.stopPropagation(); tourMinimized = true; }}>
+									Got it!
+								</button>
+							{/if}
 						</div>
 						{#if tourMinimized}
-							<div class="tour-tab">TAP/CLICK TO CONTINUE TOUR</div>
+							<div class="tour-tab">Tap/Click to Continue</div>
 						{/if}
+					</div>
+				{/if}
+
+				{#if loaded}
+					<div class="pan-zoom-buttons">
+						<div class="pan-buttons">
+							<div class="pan-row pan-row-top">
+								<button class="pan-btn" onclick={() => panCanvas('up')} title="Pan up"><ArrowUp size={18}/></button>
+							</div>
+							<div class="pan-row">
+								<button class="pan-btn" onclick={() => panCanvas('left')} title="Pan left"><ArrowLeft size={18}/></button>
+								<button class="pan-btn" onclick={() => panCanvas('down')} title="Pan down"><ArrowDown size={18}/></button>
+								<button class="pan-btn" onclick={() => panCanvas('right')} title="Pan right"><ArrowRight size={18}/></button>
+							</div>
+						</div>
+						<div class="zoom-buttons">
+							<button class="pan-btn" onclick={() => zoomCanvas('in')} title="Zoom in">+</button>
+							<button class="pan-btn" onclick={() => zoomCanvas('out')} title="Zoom out">−</button>
+						</div>
 					</div>
 				{/if}
 					<!-- Category Labels Overlay -->
@@ -1440,22 +1381,6 @@
 							}}>Reset</button>
 							</div>
 						{/if}
-						<div class="pan-zoom-buttons">
-							<div class="pan-buttons">
-								<div class="pan-row pan-row-top">
-									<button class="pan-btn" onclick={() => panCanvas('up')} title="Pan up">↑</button>
-								</div>
-								<div class="pan-row">
-									<button class="pan-btn" onclick={() => panCanvas('left')} title="Pan left">←</button>
-									<button class="pan-btn" onclick={() => panCanvas('down')} title="Pan down">↓</button>
-									<button class="pan-btn" onclick={() => panCanvas('right')} title="Pan right">→</button>
-								</div>
-							</div>
-							<div class="zoom-buttons">
-								<button class="pan-btn" onclick={() => zoomCanvas('in')} title="Zoom in">+</button>
-								<button class="pan-btn" onclick={() => zoomCanvas('out')} title="Zoom out">−</button>
-							</div>
-						</div>
 					</div>
 				{/if}
 
@@ -1470,23 +1395,23 @@
 							{:else}
 								<!-- Showfind all filter buttons -->
 								{#each highlightedGeographies as city}
-									<button class="filter-button" onclick={() => filter(city)}>{city}</button>
+									<button class="filter-button" onclick={() => filter(city)}>{getCity(city)}</button>
 								{/each}
 								<div class="divider"></div>
-								<button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => changeFilterByIndex(1)}>States</button>
-								<button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => changeFilterByIndex(2)}>Menu Type</button>
+								<button style="" class="filter-button fancy-button" onclick={() => changeFilterByIndex(1)}>States</button>
+								<button style="" class="filter-button fancy-button" onclick={() => changeFilterByIndex(2)}>Menu Setting</button>
 
-								<button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => animalFilter('pretentious')}>Pretentious</button>
-								<button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => animalFilter('casual')}>Casual</button>
-								<button style="background: #5a1d64;" class="filter-button fancy-button" onclick={() => animalFilter('plaza')}>Plaza Hotel</button>
-								<button style="background: #5a1d64;" class="filter-button fancy-button" onclick={() => animalFilter('waldorf')}>Waldorf-Astoria</button>
-								<button style="background: #5a1d64;" class="filter-button fancy-button" onclick={() => animalFilter('delmonicos')}>Delmonico's</button>
+								<!-- <button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => animalFilter('pretentious')}>Pretentious</button>
+								<button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => animalFilter('casual')}>Casual</button> -->
+								<button style="" class="filter-button fancy-button" onclick={() => animalFilter('plaza')}>Plaza Hotel</button>
+								<button style="" class="filter-button fancy-button" onclick={() => animalFilter('waldorf')}>Waldorf-Astoria</button>
+								<button style="" class="filter-button fancy-button" onclick={() => animalFilter('delmonicos')}>Delmonico's</button>
 								<div class="divider"></div>
-								<button style="background: #32641d;" class="filter-button fancy-button" onclick={() => animalFilter('obscure')}>Obscure Dishes</button>
-								<button style="background: #32641d;" class="filter-button fancy-button" onclick={() => animalFilter('rare')}>Uncommon Meats</button>
-								<button style="background: #000;" class="filter-button fancy-button" onclick={() => animalFilter('squirrel')}><Squirrel size="20" strokeWidth="1.5" color="#ffcf24"/></button>
-								<button style="background: #000;" class="filter-button fancy-button" onclick={() => animalFilter('turtle')}><Turtle size="20" strokeWidth="1.5" color="#92e936"/></button>
-								<button style="background: #000;" class="filter-button fancy-button" onclick={() => animalFilter('birdie')}><Bird size="20" strokeWidth="1.5" color="#D2F2FF"/></button>
+								<!-- <button style="background: #32641d;" class="filter-button fancy-button" onclick={() => animalFilter('obscure')}>Obscure Dishes</button> -->
+								<button style="" class="filter-button fancy-button" onclick={() => animalFilter('rare')}>Uncommon Meats</button>
+								<button style="" class="filter-button fancy-button" onclick={() => animalFilter('squirrel')}><Squirrel size="20" strokeWidth="1.5" color="#000"/></button>
+								<button style="" class="filter-button fancy-button" onclick={() => animalFilter('turtle')}><Turtle size="20" strokeWidth="1.5" color="#000"/></button>
+								<button style="" class="filter-button fancy-button" onclick={() => animalFilter('birdie')}><Bird size="20" strokeWidth="1.5" color="#000"/></button>
 							{/if}
 
 						</div>
@@ -1503,19 +1428,21 @@
 <style>
 	.tour-container {
 		position: fixed;
-		bottom: 0;
+		bottom: -2px;
 		left: 50%;
 		transform: translateX(-50%);
 		z-index: 10000002;
-		background: rgba(255, 255, 255, 0.95);
-		-webkit-backdrop-filter: blur(1rem);
-		backdrop-filter: blur(1rem);
-		border-radius: 1rem 1rem 0 0;
-		padding: 2rem;
-		max-width: 700px;
-		width: calc(100% - 100px);
-		box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.15);
+		background: rgba(255, 255, 255, 1);
+		border-radius: 3px;
+		padding: 20px 25px;
+		padding-bottom: 10px;
+		max-width: 800px;
+		width: calc(100% - 20px);
+		/* box-shadow: 0 -3px 7px 5px rgba(0, 0, 0, 0.1); */
 		transition: transform 0.1s ease, opacity 0.3s ease;
+		background: #fefdf8;
+		border: 1px solid rgba(0,0,0,.10);
+		/* border: 1px solid rgba(84, 84, 84, .43); */
 	}
 
 	.tour-container.minimized {
@@ -1538,19 +1465,19 @@
 
 	.tour-content h1 {
 		margin: 0 0 0.5rem 0;
-		font-family: 'Atlas Grotesk', sans-serif;
+		font-family: 'EB Garamond', sans-serif;
 		font-size: 1.5rem;
 		font-weight: 500;
 	}
 
 	.tour-content p {
 		margin: 0;
-		font-family: 'Atlas Grotesk', sans-serif;
-		font-size: 1rem;
-		line-height: 1.3;
-		letter-spacing: -0.01em;
+		font-family: 'EB Garamond', sans-serif;
 		color: #111;
-		margin-bottom: 1rem;
+		margin-bottom: 10px;
+		font-size: 20px;
+		line-height: 1.2;
+		/* letter-spacing: -0.01em; */
 	}
 
 	.tour-tab {
@@ -1558,8 +1485,8 @@
 		top: 8px;
 		left: 50%;
 		transform: translateX(-50%);
-		font-family: 'Atlas Typewriter', monospace;
-		font-size: 17px;
+		font-family: 'Atlas Grotesk', monospace;
+		font-size: 16px;
 		color: #333;
 		white-space: nowrap;
 	}
@@ -1579,23 +1506,33 @@
 		display: flex;
 		flex-direction: column-reverse;
 		gap: 10px;
-		-webkit-backdrop-filter: blur(2rem);
-		backdrop-filter: blur(2rem);
-		background-color: #bababa33;
 		border-radius: .2rem;
 		padding: 1rem;
 		overflow: visible;
+	}
+	.geocoder-container::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		background: #fffce3;
+		border-radius: .2rem;
+		z-index: -1;
+		pointer-events: none;
 	}
 
 	.geocoder-container :global(.mapboxgl-ctrl-geocoder) {
 		width: 100%;
 		/* box-shadow: 0 2px 4px rgba(0,0,0,0.2); */
+		box-shadow: none;
 	}
 
 	.geocoder-container :global(.mapboxgl-ctrl-geocoder input) {
-		font-family: 'Atlas Typewriter';
+		font-family: 'EB Garamond';
 		font-weight: 300;
 		-webkit-font-smoothing: antialiased;
+		padding-top: 0;
+		padding-bottom: 0;
+		background: #FEFCEE;
 	}
 
 	.geocoder-container :global(.mapboxgl-ctrl-geocoder input::placeholder) {
@@ -1635,10 +1572,19 @@
 		padding: 4px 8px;
 		color: #fff;
 		text-transform: uppercase;
-		font-family: 'Atlas Typewriter';
-		font-weight: 300;
+		font-family: 'EB Garamond';
+		font-weight: 700;
 		-webkit-font-smoothing: antialiased;
-		border-radius: 3px;
+		border-radius: 1px;
+		background: none;
+		border: 1px solid #6a6a6a;
+		color: black;
+		border-right: 2px solid black;
+		border-bottom: 2px solid black;
+	}
+
+	.filter-button button:hover {
+		background: #fffef3;
 	}
 
 	.filter-button.active-filter {
@@ -1674,9 +1620,9 @@
 		gap: 6px;
 	}
 	.title-text {
-		font-family: 'Atlas Grotesk', sans-serif;
-		font-size: 16px;
-		line-height: 1.3;
+		font-family: 'EB Garamond', sans-serif;
+		font-size: 18px;
+		line-height: 1.1;
 		font-weight: 600;
 		color: #333;
 		text-align: center;
@@ -1714,7 +1660,7 @@
 		border: 1px solid rgba(0,0,0,0.15);
 		box-shadow: 0 4px 20px rgba(0,0,0,0.15);
 		padding: 1rem 1.25rem;
-		font-family: 'Atlas Typewriter', monospace;
+		font-family: 'EB Garamond', monospace;
 		font-size: 12px;
 	}
 	.controls-panel h4 {
@@ -1759,6 +1705,9 @@
 		flex-direction: column;
 		align-items: center;
 		gap: 6px;
+		position: fixed;
+    	right: 22px;
+    	top: 70px;
 	}
 	.pan-buttons {
 		display: flex;
@@ -1782,15 +1731,47 @@
 	.pan-btn {
 		width: 32px;
 		height: 32px;
-		border-radius: 6px;
-		border: 1px solid rgba(0,0,0,0.2);
-		background: rgba(255,255,255,1);
+		border: 1px solid rgb(0 0 0 / 62%);
+    	background: #fffce3;
+		/* border: 1px solid rgba(0,0,0,0.2);
+		background: #FEFCEE; */
 		cursor: pointer;
 		font-size: 16px;
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+		position: relative;
+	}
+	.pan-btn::after {
+		content: '';
+		position: absolute;
+		inset: 2px -4px -4px 2px;
+		border-radius: 6px;
+		background: repeating-linear-gradient(
+			227deg,
+			transparent,
+			transparent 2px,
+			rgba(0,0,0,0.25) 2px,
+			rgba(0,0,0,0.25) 3px
+		);
+		z-index: -1;
+	}
+	.geocoder-container::before {
+		content: '';
+		position: absolute;
+		top: 6px;
+		left: 6px;
+		right: -6px;
+		bottom: -6px;
+		border-radius: .2rem;
+		background: repeating-linear-gradient(
+			227deg,
+			transparent,
+			transparent 2px,
+			rgba(0,0,0,0.25) 2px,
+			rgba(0,0,0,0.25) 3px
+		);
+		z-index: -2;
 	}
 	.pan-btn:hover {
 		background: rgba(255,255,255,1);
@@ -1836,7 +1817,7 @@
 		inset: 0;
 		z-index: 10000003;
 		display: flex;
-		font-family: 'Atlas Typewriter', monospace;
+		font-family: 'EB Garamond', monospace;
 		align-items: center;
 		justify-content: center;
 		flex-direction: column;
@@ -1895,9 +1876,9 @@
 	}
 
 	.label-text {
-		font-family: 'Atlas Typewriter', monospace;
+		font-family: 'Atlas Grotesk', monospace;
 		font-size: 11px;
-		font-weight: 400;
+		font-weight: 600;
 		color: white;
 		background: rgba(0, 0, 0, .9);
 		padding: 3px 4px;
@@ -1908,7 +1889,7 @@
 	}
 
 	.label-count {
-		font-family: 'Atlas Typewriter', monospace;
+		font-family: 'EB Garamond', monospace;
 		font-size: 9px;
 		color: #666;
 		background: rgba(255, 255, 255, 0.7);
@@ -1931,7 +1912,8 @@
 		cursor: pointer;
 		padding: 0;
 		margin: 0;
-		font-size: 16px;
+		font-size: 15px;
+		font-family: 'Atlas Grotesk', monospace;
 		display: flex;
 		font-weight: 600;
 		letter-spacing: -0.02em;
@@ -1948,5 +1930,59 @@
 
 	:global(.tour-button svg) {
 		transform: translate(0,2px);
+	}
+
+	.tour-arrow-right {
+		margin-right: -9px;
+	}
+
+	@media (max-width: 450px) {
+		.tour-container {
+			padding: 20px 15px;
+			padding-bottom: 10px;
+			max-width: 800px;
+			width: calc(100% - 20px);
+			letter-spacing: 0em;
+		}
+
+		.tour-content p {
+			font-size: 16.5px;
+		}
+		.tour-button {
+			font-size: 14px;
+		}
+		.pan-zoom-buttons {
+			right: 10px;
+			position: fixed;
+			top: 60px;
+			z-index: 1000000000;
+		}
+		.zoom-buttons {
+			flex-direction: column;
+		}
+		.geocoder-container {
+			visibility: visible;
+			top: 38px;
+			width: calc(100vw - 70px);
+			backdrop-filter: blur(0.15rem);
+			padding: 0;
+			padding-bottom: 10px;
+			padding-right: 10px;
+		}
+		.pan-row {
+			flex-direction: column;
+		}
+		.title-text {
+			text-align: right;
+		}
+		.divider {
+			display: none;
+		}
+		.tour-tab {
+			font-size: 14px;
+		}
+		.filter-container button {
+			padding: 4px 7px;
+		}
 	}
 </style>

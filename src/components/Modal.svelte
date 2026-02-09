@@ -57,7 +57,6 @@
     });
     
     function closeModal() {
-        console.log('closeModal')
         showModal = false;
         // sootElement?.expose?.deselectInstance();
     }
@@ -69,21 +68,15 @@
 
 	// Initialize and update deck instance when dependencies change
 	$effect(() => {
-		console.log('🔄 Effect triggered - Container:', !!deckContainer, 'Images:', relatedImageIds?.length, 'AspectRatioMap:', aspectRatioMap?.size);
-		
 		if (!deckContainer || !relatedImageIds || relatedImageIds.length === 0 || !aspectRatioMap) {
-			console.log('⏳ Waiting for container, images, or aspectRatioMap...');
 			return;
 		}
 
 		// Clean up previous instance first (this forces a true reset)
 		if (deck) {
-			console.log('🧹 Cleaning up previous deck instance...');
 			deck.finalize();
 			deck = null;
 		}
-
-		console.log('✅ Getting image info from aspectRatioMap for', relatedImageIds.length, 'images');
 
 		// Get dimensions from aspectRatioMap
 		const imageInfos = relatedImageIds.map(imageId => {
@@ -97,7 +90,6 @@
 				};
 			} else {
 				// Fallback if image not found in map
-				console.warn(`⚠️ Image ${imageId} not found in aspectRatioMap, using fallback`);
 				return {
 					imageId,
 					width: 1000,
@@ -118,8 +110,6 @@
 			const height = size / info.aspectRatio;
 			const xCenter = index * (size + spacing);
 
-			// console.log("creating bitmap layer for ",`https://iiif.nypl.org/iiif/3/${info.imageId}/full/^1600,/0/default.jpg`)
-			
 			return new BitmapLayer({
 				id: `bitmap-${info.imageId}-${Date.now()}`,
 				image: `https://s3.us-east-1.amazonaws.com/pudding.cool/menu-images/${info.imageId}.jpg`,
@@ -139,16 +129,10 @@
 					[0x2802]: 0x812F, // CLAMP_TO_EDGE
 					[0x2803]: 0x812F, // CLAMP_TO_EDGE
 				},
-				onHover: (event) => {
-					if (event.object) {
-						console.log('Hovering over:', info.imageId);
-					}
-				}
+				onHover: () => {}
 			});
 		});
 
-		console.log('🏗️ Creating new Deck instance...');
-		
 		deck = new Deck({
 			parent: deckContainer,
 			initialViewState: {
@@ -161,15 +145,12 @@
 			},
 			controller: true,
 			views: new OrthographicView(),
-			layers: layers,
-			onLoad: () => console.log('✅ Deck loaded'),
-			onError: (e) => console.error('❌ Deck error:', e)
+			layers: layers
 		});
 
 		// Cleanup on unmount or dependency change
 		return () => {
 			if (deck) {
-				console.log('🧹 Finalizing deck on cleanup');
 				deck.finalize();
 				deck = null;
 			}
@@ -221,7 +202,7 @@
 		background: #222;
 		color: #fff;
 		font-size: 13px;
-		font-family: 'Atlas Typewriter', monospace;
+		font-family: 'Atlas Grotesk', monospace;
 		text-align: center;
 		border-bottom: 1px solid #000;
 		letter-spacing: 0.02em;
@@ -273,7 +254,7 @@
 		font-weight: 600;
 		line-height: 25px;
 		height: 25px;
-		font-family: 'Atlas Typewriter';
+		font-family: 'Atlas Grotesk';
 	}
 	.sidebar {
 		position: absolute;
@@ -308,15 +289,15 @@
 		margin-right: 5px;
 	}
 	.year, .location {
-		font-size: 14px;
-		opacity: 0.8;
-		font-family: var(--mono);
+		font-size: 16px;
+		opacity: 1;
+		font-family: 'EB Garamond';
 	}
 	.info-container {
 		position: absolute;
 		top: 0;
 		left: 0;
-		background: #f7f7f7;
+		background: #fffef5;
 		width: 100%;
 		height: 70px;
 		font-family: var(--sans);
@@ -329,7 +310,7 @@
         position: fixed;
         top: 0;
         left: 0;
-		background-color: #f7f7f7;
+		background-color: #fffef5;
         width: 100%;
         height: 100vh;
         z-index: 1000000000000;
@@ -350,6 +331,7 @@
         border: none;
         cursor: pointer;
         font-size: 16px;
+		font-family: 'Atlas Grotesk';
         z-index: 1001;
 		margin-right: 20px;
 		width: 100px;

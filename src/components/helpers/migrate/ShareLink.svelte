@@ -21,9 +21,7 @@
 			navigator
 				.share({ title, url })
 				.then(() => {})
-				.catch((err) => {
-					console.log(err);
-				});
+				.catch(() => {});
 		} else notify();
 	}
 </script>

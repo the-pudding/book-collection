@@ -5,7 +5,7 @@ import debounce from "lodash.debounce";
  * example:
  * <p
  * 	use:resize
- * 	on:resize={() => console.log("enter")}
+ * 	on:resize={() => {}}
  * >
  *
  * optional params { debounce, exclude }

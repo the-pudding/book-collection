@@ -1,6 +1,6 @@
 <script>
 	// shadow, plain, line, bubble
-	import wordmark from "$svg/wordmark-bubble.svg";
+	import wordmark from "$svg/wordmark-classic-copy.svg";
 </script>
 
 <header>
@@ -20,15 +20,21 @@
 		width: 100%;
 		height: 100%;
 		pointer-events: none;
-		z-index: 1000;
+		z-index: 10000000;
 		overflow: hidden;
 	}
 	.wordmark {
-		max-width: 18em;
+		max-width: 14em;
 		pointer-events: auto;
 		margin: 0;
-		padding: 36px;
-		transform: translate(0, -19px) rotate(-4deg);
+		padding: 6px 18px;
+		/* transform: translate(0, -19px) rotate(-4deg); */
+	}
+
+	:global(.wordmark #color-stroke)  {
+		opacity: 0.4;
+		filter: blur(0.2px);
+    	transform: translate(4px, 5px);
 	}
 
 	.wordmark a {
@@ -37,7 +43,36 @@
 		color: var(--color-fg);
 	}
 
+	:global(.wordmark path:not([id="color-stroke"])) {
+		filter: drop-shadow(2px 2px 0px var(--color-bg));
+	}
+
 	.wordmark a:hover {
 		background-color: transparent;
 	}
+
+	@media (max-width: 400px) {
+		.wordmark {
+			max-width: 13em;
+			padding-left: 8px;
+			/* transform: translate(-18px, -19px) rotate(-4deg); */
+		}
+
+		header {
+			/* existing styles are above, so add only the overlay gradient here */
+			background: linear-gradient(
+				to bottom,
+				rgba(255,252,227,1) 0px,
+				rgba(255,252,227,0.85) 52px,
+				rgba(255,252,227,0) 100px
+			)
+		}
+	}
+	@media (max-width: 360px) {
+		.wordmark {
+			max-width: 13.5em;
+			/* transform: translate(-14px, -15px) rotate(-4deg); */
+		}
+	}
+
 </style>

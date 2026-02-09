@@ -3,7 +3,6 @@
 import checkScrollDir from "$utils/checkScrollDir.js";
 let scrollY;
 $: scrollDir = checkScrollDir(scrollY);
-$: console.log(scrollDir)
 </script>
 
 <svelte:window bind:scrollY={scrollY} />
