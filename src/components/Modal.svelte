@@ -9,7 +9,7 @@
 	let deck;
 	let sidebarExpanded = $state(false);
 
-    let { aspectRatioMap,instanceSelected, relatedImageIds, showModal = $bindable(), relatedMetadata, sootElement } = $props();
+    let { activeFilter, aspectRatioMap, instanceSelected, relatedImageIds, showModal = $bindable(), relatedMetadata, sootElement, tourFilter, metaData, onOpenRandom } = $props();
 
 	// Historical CPI data for inflation calculation (base year 1982-84 = 100)
 	const cpiData = {
@@ -45,15 +45,15 @@
 		return (currentCPI / historicalCPI).toFixed(2);
 	});
     
-    // Log when props change (must be in $effect to react to changes)
+    // Debug logging (disable in production to reduce main-thread work)
+    const DEBUG_MODAL = false;
     $effect(() => {
-        console.log('Modal props received:', { 
-            instanceSelected, 
-            relatedImageIds, 
-            showModal, 
-            relatedMetadata,
-            aspectRatioMap: aspectRatioMap ? `Map with ${aspectRatioMap.size} entries` : null
-        });
+        if (!DEBUG_MODAL) return;
+        console.log('Modal props received:', { instanceSelected, relatedImageIds, showModal, relatedMetadata, aspectRatioMap: aspectRatioMap?.size });
+    });
+    $effect(() => {
+        if (!DEBUG_MODAL || !showModal) return;
+        console.log('Modal on load — activeFilter:', activeFilter, 'tourFilter:', tourFilter);
     });
     
     function closeModal() {
@@ -66,75 +66,73 @@
 	}
 	
 
-	// Initialize and update deck instance when dependencies change
-	$effect(() => {
-		if (!deckContainer || !relatedImageIds || relatedImageIds.length === 0 || !aspectRatioMap) {
-			return;
-		}
-
-		// Clean up previous instance first (this forces a true reset)
-		if (deck) {
-			deck.finalize();
-			deck = null;
-		}
-
-		// Get dimensions from aspectRatioMap
-		const imageInfos = relatedImageIds.map(imageId => {
-			const imageData = aspectRatioMap.get(String(imageId));
-			if (imageData) {
-				return {
-					imageId,
-					width: imageData.width,
-					height: imageData.height,
-					aspectRatio: imageData.aspectRatio
-				};
-			} else {
-				// Fallback if image not found in map
-				return {
-					imageId,
-					width: 1000,
-					height: 1000,
-					aspectRatio: 1
-				};
-			}
-		});
-
-		// Check if we're still mounted
-		if (!deckContainer) return;
-
+	// Build layer list from current relatedImageIds + aspectRatioMap (no Deck creation here)
+	function buildLayers(imageIds, aspectMap) {
+		if (!imageIds?.length || !aspectMap) return [];
 		const size = 1600;
 		const spacing = 50;
-
-		const layers = imageInfos.map((info, index) => {
+		const imageInfos = imageIds.map((imageId) => {
+			const imageData = aspectMap.get(String(imageId));
+			if (imageData) {
+				return { imageId, aspectRatio: imageData.aspectRatio };
+			}
+			return { imageId, aspectRatio: 1 };
+		});
+		return imageInfos.map((info, index) => {
 			const width = size;
 			const height = size / info.aspectRatio;
 			const xCenter = index * (size + spacing);
-
 			return new BitmapLayer({
-				id: `bitmap-${info.imageId}-${Date.now()}`,
+				id: `bitmap-${info.imageId}`,
 				image: `https://s3.us-east-1.amazonaws.com/pudding.cool/menu-images/${info.imageId}.jpg`,
 				bounds: [
-					xCenter - width/2,  // left
-					height/2,           // bottom
-					xCenter + width/2,  // right
-					-height/2           // top
+					xCenter - width / 2,
+					height / 2,
+					xCenter + width / 2,
+					-height / 2
 				],
 				pickable: true,
-				parameters: {
-					depthTest: false
-				},
+				parameters: { depthTest: false },
 				textureParameters: {
-					[0x2801]: 0x2601, // GL.LINEAR
-					[0x2800]: 0x2601, // GL.LINEAR
-					[0x2802]: 0x812F, // CLAMP_TO_EDGE
-					[0x2803]: 0x812F, // CLAMP_TO_EDGE
+					[0x2801]: 0x2601,
+					[0x2800]: 0x2601,
+					[0x2802]: 0x812f,
+					[0x2803]: 0x812f
 				},
 				onHover: () => {}
 			});
 		});
+	}
 
+	// Stable key for current image set so we only recreate Deck when menu changes, not on every re-render
+	let lastIdsKey = '';
+	$effect(() => {
+		if (!deckContainer || !relatedImageIds?.length || !aspectRatioMap) {
+			return;
+		}
+		const idsKey = relatedImageIds.slice().sort().join(',');
+		const layers = buildLayers(relatedImageIds, aspectRatioMap);
+		if (layers.length === 0) return;
+
+		const sameMenu = deck && idsKey === lastIdsKey;
+		if (sameMenu) {
+			deck.setProps({ layers });
+			return;
+		}
+
+		if (deck) {
+			deck.finalize();
+			deck = null;
+		}
+		lastIdsKey = idsKey;
+
+		const rect = deckContainer.getBoundingClientRect();
+		const pixelRatio = typeof window !== 'undefined' ? Math.min(2, window.devicePixelRatio || 1) : 1;
 		deck = new Deck({
 			parent: deckContainer,
+			width: rect.width > 0 ? rect.width : undefined,
+			height: rect.height > 0 ? rect.height : undefined,
+			useDevicePixels: pixelRatio,
 			initialViewState: {
 				target: [0, 0, 0],
 				zoom: -3,
@@ -145,10 +143,9 @@
 			},
 			controller: true,
 			views: new OrthographicView(),
-			layers: layers
+			layers
 		});
 
-		// Cleanup on unmount or dependency change
 		return () => {
 			if (deck) {
 				deck.finalize();
@@ -157,12 +154,28 @@
 		};
 	});
 
+	// Keep deck canvas sized to container (e.g. when sidebar toggles or window resizes)
+	$effect(() => {
+		const container = deckContainer;
+		const d = deck;
+		if (!container || !d) return;
+		const ro = new ResizeObserver(() => {
+			const { width, height } = container.getBoundingClientRect();
+			if (width && height) d.setProps({ width, height });
+		});
+		ro.observe(container);
+		return () => ro.disconnect();
+	});
+
 
 </script>
 
 <div class="modal">
 	<div class="info-container">
 		<button class="close-button" onclick={closeModal}>Back</button>
+		{#if onOpenRandom}
+			<button class="random-button" onclick={onOpenRandom}>Random</button>
+		{/if}
 		<div class="info-content">
 			<p><span class="title">{relatedMetadata?.title}</span></p>
 			<p>
@@ -342,6 +355,24 @@
 
     .close-button:hover {
         background-color: #555;
+    }
+
+    .random-button {
+        background-color: #555;
+        color: white;
+        border: none;
+        cursor: pointer;
+        font-size: 16px;
+        font-family: 'Atlas Grotesk';
+        z-index: 1001;
+        margin-right: 10px;
+        width: 90px;
+        height: 100%;
+        border-radius: 0;
+    }
+
+    .random-button:hover {
+        background-color: #777;
     }
 
 </style>

@@ -6,7 +6,10 @@
 	import metaData from "$data/metadata.csv";
 	import MapboxGeocoder from '@mapbox/mapbox-gl-geocoder';
 	import '@mapbox/mapbox-gl-geocoder/dist/mapbox-gl-geocoder.css';
-	import { Squirrel, Turtle, Bird, Brain, ChevronRight, ChevronLeft, ArrowUp, ArrowDown, ArrowLeft, ArrowRight } from "@lucide/svelte";
+	import arrowRight from "$svg/arrow-right.svg";
+	import plus from "$svg/plus.svg";
+	import minus from "$svg/minus.svg";
+	import { Squirrel, Turtle, Bird, ArrowUp, ArrowDown, ArrowLeft, ArrowRight } from "@lucide/svelte";
 	import Header from "$components/Header.svelte";
 	import { fade } from "svelte/transition";
 
@@ -32,6 +35,8 @@
 	let instanceSelected = $state(null);
 	let citiesList = $state(null);
 	let statesList = $state(null);
+	let tourFilter = $state(null);
+
 	let activeFilter = $state(null); // Track the currently selected filter
 	let geocoderContainer;
 	let geocoder;
@@ -39,6 +44,8 @@
 	let tour = $state(true);
 	let tourMinimized = $state(false);
 	let showControlsPanel = $state(false);
+
+	const DEBUG_SEARCH = false; // set true to log geocoder/filter debug
 
 	// Controls tuning - adjustable via GUI
 	let controlSettings = $state({
@@ -230,6 +237,7 @@
 	// Watch for tourStep changes and apply filters
 	$effect(() => {
 		// filter("focus")
+		
 		if(tourStep === 0) {
 			clearFilter();
 		}
@@ -343,27 +351,49 @@
 		}
 	});
 
+	// Pause soot's Three.js render loop when modal is open so DeckGL isn't competing for GPU.
+	// Soot should expose: expose.pauseRendering() and expose.resumeRendering().
+	// See docs/THREEJS_PAUSE_RENDERING.md for how to implement in a Three.js render loop.
+	$effect(() => {
+		if (!sootElement?.expose) return;
+		if (showModal) {
+			sootElement.expose.pauseRendering?.();
+		} else {
+			sootElement.expose.resumeRendering?.();
+		}
+	});
+
 	// Initialize geocoder when container and citiesList are ready
 	$effect(() => {
+		const hasContainer = !!geocoderContainer;
+		const citiesLen = citiesList?.length ?? 0;
+		const statesLen = statesList?.length ?? 0;
+		if (DEBUG_SEARCH) console.log('[Geocoder effect] run', { hasContainer, citiesLen, statesLen, activeFilter: activeFilter != null, tourFilter: tourFilter != null });
 		if (geocoderContainer && citiesList && citiesList.length > 0 && statesList && statesList.length > 0) {
-			// Use setTimeout to ensure DOM is ready
 			setTimeout(() => {
+				if (DEBUG_SEARCH) console.log('[Geocoder effect] calling initializeGeocoder');
 				initializeGeocoder(citiesList, statesList);
 			}, 100);
 		}
 	});
 
 	async function animalFilter(animal){
+		if (DEBUG_SEARCH) console.log('[Search debug] animalFilter called', animal);
 		activeFilter = { raw: animal, label: animal };
 
 		await sootElement?.expose?.executeSearch(animal);
 	}
 
 	async function filterTag(tag){
+		if (DEBUG_SEARCH) console.log('[Search debug] filterTag called', tag);
+		activeFilter = null;
+		tourFilter = tag;
+		// activeFilter = { raw: tag, label: tag };
 		await sootElement?.expose?.executeSearch(tag);
 	}
 	
 	async function filter(location){
+		if (DEBUG_SEARCH) console.log('[Search debug] filter (location) called', location);
 		// Decode first in case value is already URL-encoded (e.g. from metadata)
 		const decoded = (() => {
 			try { return decodeURIComponent(location); } catch { return location; }
@@ -378,6 +408,7 @@
 	}
 
 	async function clearFilter() {
+		if (DEBUG_SEARCH) console.log('[Search debug] clearFilter called');
 		activeFilter = null;
 		// controls.maxDistance = 300;
 		
@@ -388,7 +419,50 @@
 		}
 	}
 
+	function openRandomModal() {
+		if (!metaData?.length || !imageIdToMenuId.size) return;
+
+		const safeDecode = (s) => {
+			if (s == null || s === '') return '';
+			try { return decodeURIComponent(s); } catch { return s; }
+		};
+		const tagsContain = (tagsStr, tag) => {
+			if (!tagsStr || !tag) return false;
+			return tagsStr.split(',').map((t) => t.trim()).includes(tag);
+		};
+
+		let rows = metaData.filter((row) => row.filename);
+
+		if (activeFilter != null) {
+			// When activeFilter is set, ignore tourFilter and filter by geography_city
+			const matchCity = activeFilter.raw != null ? String(activeFilter.raw).trim() : '';
+			if (matchCity) {
+				rows = rows.filter((row) => safeDecode(row.geography_city) === matchCity);
+			}
+		} else if (tourFilter != null) {
+			const tour = String(tourFilter).toLowerCase();
+			if (tour === 'focus') {
+				rows = rows.filter((row) => tagsContain(row.tags, 'focus'));
+			} else if (tour === 'delmonicos') {
+				rows = rows.filter((row) => row.rest === 'delmonicos');
+			} else if (tour === 'off') {
+				rows = rows.filter((row) => tagsContain(row.tags, 'off'));
+			} else if (tour === 'hist') {
+				rows = rows.filter((row) => tagsContain(row.tags, 'hist'));
+			}
+		}
+
+		const imageIds = rows
+			.map((row) => row.filename.replace(/\.jpg$/i, ''))
+			.filter((id) => imageIdToMenuId.has(id));
+		if (imageIds.length === 0) return;
+		const randomId = imageIds[Math.floor(Math.random() * imageIds.length)];
+		instanceSelected = randomId;
+		showModal = true;
+	}
+
 	async function changeFilterByIndex(index) {
+		if (DEBUG_SEARCH) console.log('[Search debug] changeFilterByIndex called', index);
 		const views = await sootElement?.expose?.getViews();
 		if (views && views.length > 0) {
 			activeFilter = { raw: views[index].displayName, label: views[index].displayName };
@@ -397,17 +471,19 @@
 	}
 
 	function initializeGeocoder(cities, states) {
+		if (DEBUG_SEARCH) console.log('[Search debug] initializeGeocoder called', { citiesCount: cities?.length, statesCount: states?.length });
 		if (!geocoderContainer || !cities || cities.length === 0 || !states || states.length === 0) {
+			if (DEBUG_SEARCH) console.log('[Search debug] initializeGeocoder early return (missing container or data)');
 			return;
 		}
 
-		// Clean up existing geocoder if any
+		// Clean up existing geocoder if any (remove DOM only; .off() requires listener ref so we don't call it)
 		if (geocoder) {
+			if (DEBUG_SEARCH) console.log('[Search debug] initializeGeocoder cleaning up existing geocoder (re-init)');
 			const geocoderElement = geocoderContainer.querySelector('.mapboxgl-ctrl-geocoder');
 			if (geocoderElement) {
 				geocoderElement.remove();
 			}
-			geocoder.off('result');
 		}
 		// Create local geocoder function for autocomplete
 		const decodeDisplay = (s) => {
@@ -416,12 +492,11 @@
 
 		// Geocoder uses only citiesList and statesList - no other sources
 		const localGeocoder = (query) => {
-			const queryLower = query.toLowerCase().trim();
-			
+			const queryLower = (query || '').toLowerCase().trim();
 			if (!queryLower) {
+				if (DEBUG_SEARCH) console.log('[Search debug] localGeocoder invoked with empty query (focus or clear)');
 				return [];
 			}
-
 			const cityMatches = cities
 				.filter(city => city.toLowerCase().includes(queryLower) || decodeDisplay(city).toLowerCase().includes(queryLower))
 				.slice(0, 3)
@@ -442,7 +517,9 @@
 					properties: { location: state }
 				}));
 
-			return [...cityMatches, ...stateMatches];
+			const results = [...cityMatches, ...stateMatches];
+			if (DEBUG_SEARCH) console.log('[Search debug] localGeocoder invoked', { query: query?.slice(0, 50), queryLower: queryLower?.slice(0, 50), resultsCount: results.length });
+			return results;
 		};
 
 		// Initialize Mapbox Geocoder with localGeocoder for autocomplete
@@ -465,6 +542,7 @@
 
 		// Handle result selection
 		geocoder.on('result', (e) => {
+			if (DEBUG_SEARCH) console.log('[Search debug] geocoder "result" event (user selected suggestion)', e.result?.place_name);
 			const result = e.result;
 			if (result.properties?.location) {
 				filter(result.properties.location);
@@ -502,6 +580,7 @@
 		
 		// Also filter on results event as a backup
 		geocoder.on('results', (e) => {
+			if (DEBUG_SEARCH) console.log('[Search debug] geocoder "results" event (suggestions shown)', e.results?.length ?? 0, 'results');
 			if (e.results && Array.isArray(e.results)) {
 				const invalidCount = e.results.filter(result => {
 					const placeName = result.place_name;
@@ -1211,7 +1290,7 @@
 	{/if}
 
 	<div class="modal-container {showModal ? 'show-modal' : 'hide-modal'}">
-		<Modal bind:showModal {instanceSelected} relatedMetadata={relatedImageIds[1]} relatedImageIds={relatedImageIds[0]} {sootElement} aspectRatioMap={aspectRatioMap}/>
+		<Modal bind:showModal {instanceSelected} relatedMetadata={relatedImageIds[1]} relatedImageIds={relatedImageIds[0]} {sootElement} {aspectRatioMap} {activeFilter} {tourFilter} {metaData} onOpenRandom={openRandomModal} />
 	</div>
 
 	<div id="soot-publication" class="{showModal ? 'soot-publication-hide' : 'soot-publication-show'}">
@@ -1249,7 +1328,10 @@
 							{#if tourStep > 0}
 								<button class="tour-button tour-button-back" onclick={() => tourStep--}>
 									<div class="tour-arrow-left">
-										<ChevronLeft size="30" strokeWidth="1.7" color="#000" />
+										<div style="transform: rotate(180deg);">
+											{@html arrowRight}
+										</div>
+										<!-- <ChevronLeft size="30" strokeWidth="1.7" color="#000" /> -->
 									</div>
 									<!-- {tourText[tourStep - 1].section} -->
 								</button>
@@ -1258,7 +1340,8 @@
 								<button class="tour-button" style="text-align: right; margin-inline-start: auto;" onclick={() => tourStep++}>
 									{tourText[tourStep].section}
 									<div class="tour-arrow-right">
-										<ChevronRight size="30" strokeWidth="1.7" color="#000" />
+										{@html arrowRight}
+										<!-- <ChevronRight size="30" strokeWidth="1.7" color="#000" /> -->
 									</div>	
 								</button>
 							{/if}
@@ -1269,7 +1352,16 @@
 							{/if}
 						</div>
 						{#if tourMinimized}
-							<div class="tour-tab">Tap/Click to Continue</div>
+							<div class="tour-tab">Show Guide
+								<span style="
+									transform: rotate(-90deg);
+									display: block;
+									width: 18px;
+									margin-left: 10px;
+								">
+									{@html arrowRight}
+								</span>
+							</div>
 						{/if}
 					</div>
 				{/if}
@@ -1278,17 +1370,37 @@
 					<div class="pan-zoom-buttons">
 						<div class="pan-buttons">
 							<div class="pan-row pan-row-top">
-								<button class="pan-btn" onclick={() => panCanvas('up')} title="Pan up"><ArrowUp size={18}/></button>
+								<button class="pan-btn" onclick={() => panCanvas('up')} title="Pan up">
+									<div style="transform: rotate(-90deg);">
+										{@html arrowRight}
+									</div>
+								</button>
 							</div>
 							<div class="pan-row">
-								<button class="pan-btn" onclick={() => panCanvas('left')} title="Pan left"><ArrowLeft size={18}/></button>
-								<button class="pan-btn" onclick={() => panCanvas('down')} title="Pan down"><ArrowDown size={18}/></button>
-								<button class="pan-btn" onclick={() => panCanvas('right')} title="Pan right"><ArrowRight size={18}/></button>
+								<button class="pan-btn" onclick={() => panCanvas('left')} title="Pan left">
+									<div style="transform: rotate(180deg);">
+										{@html arrowRight}
+									</div>
+								</button>
+								<button class="pan-btn" onclick={() => panCanvas('down')} title="Pan down">
+									<div style="transform: rotate(90deg);">
+										{@html arrowRight}
+									</div>
+								</button>
+								<button class="pan-btn" onclick={() => panCanvas('right')} title="Pan right">
+									<div style="transform: rotate(0deg);">
+										{@html arrowRight}
+									</div>
+								</button>
 							</div>
 						</div>
 						<div class="zoom-buttons">
-							<button class="pan-btn" onclick={() => zoomCanvas('in')} title="Zoom in">+</button>
-							<button class="pan-btn" onclick={() => zoomCanvas('out')} title="Zoom out">−</button>
+							<button class="pan-btn" onclick={() => zoomCanvas('in')} title="Zoom in">
+								{@html plus}
+							</button>
+							<button class="pan-btn" onclick={() => zoomCanvas('out')} title="Zoom out">
+								{@html minus}
+							</button>
 						</div>
 					</div>
 				{/if}
@@ -1435,12 +1547,12 @@
 		background: rgba(255, 255, 255, 1);
 		border-radius: 3px;
 		padding: 20px 25px;
-		padding-bottom: 10px;
+		padding-bottom: 15px;
 		max-width: 800px;
 		width: calc(100% - 20px);
 		/* box-shadow: 0 -3px 7px 5px rgba(0, 0, 0, 0.1); */
-		transition: transform 0.1s ease, opacity 0.3s ease;
-		background: #fefdf8;
+		/* transition: transform 0.1s ease, opacity 0.3s ease; */
+		background: #FFFFFB;
 		border: 1px solid rgba(0,0,0,.10);
 		/* border: 1px solid rgba(84, 84, 84, .43); */
 	}
@@ -1448,6 +1560,17 @@
 	.tour-container.minimized {
 		transform: translateX(-50%) translateY(calc(100% - 40px));
 		cursor: pointer;
+		background: black;
+		max-width: 300px;
+	}
+
+	.tour-container.minimized .tour-tab {
+		color: white;
+	}
+
+	.tour-container.minimized .tour-tab :global(path) {
+		color: white;
+		fill: white;
 	}
 
 	.tour-container.minimized:hover {
@@ -1484,6 +1607,7 @@
 		position: absolute;
 		top: 8px;
 		left: 50%;
+		display: flex;
 		transform: translateX(-50%);
 		font-family: 'Atlas Grotesk', monospace;
 		font-size: 16px;
@@ -1514,7 +1638,7 @@
 		content: '';
 		position: absolute;
 		inset: 0;
-		background: #fffce3;
+		background: var(--color-bg);
 		border-radius: .2rem;
 		z-index: -1;
 		pointer-events: none;
@@ -1532,7 +1656,7 @@
 		-webkit-font-smoothing: antialiased;
 		padding-top: 0;
 		padding-bottom: 0;
-		background: #FEFCEE;
+		background: var(--color-bg);
 	}
 
 	.geocoder-container :global(.mapboxgl-ctrl-geocoder input::placeholder) {
@@ -1787,8 +1911,11 @@
 		border-radius: 4px;
 	}
 
+	/* When modal is open, hide soot so its WebGL context isn't composited alongside DeckGL (avoids lag) */
 	.soot-publication-hide {
-		/* visibility: hidden; */
+		display: none !important;
+		visibility: hidden;
+		pointer-events: none;
 	}
 	.soot-publication-show {
 	}
@@ -1934,6 +2061,7 @@
 
 	.tour-arrow-right {
 		margin-right: -9px;
+		margin-left: 7px;
 	}
 
 	@media (max-width: 450px) {
