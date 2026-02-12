@@ -631,7 +631,6 @@
 		// Initialize Mapbox Geocoder with localGeocoder for autocomplete
 		// Set localGeocoderOnly to true to ONLY use local geocoder and exclude Mapbox API results
 		geocoder = new MapboxGeocoder({
-			accessToken: 'pk.eyJ1IjoiZG9jazQyNDIiLCJhIjoiY2xqc2g3N2o5MHAyMDNjdGhzM2V2cmR3NiJ9.3x1ManoY4deDkAGBuUMnSw', // Not needed when using only localGeocoder
 			localGeocoder: localGeocoder,
 			localGeocoderOnly: true, // ONLY use local geocoder, exclude all Mapbox API results
 			placeholder: 'Search cities, states...',
