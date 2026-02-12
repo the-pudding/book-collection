@@ -3,6 +3,7 @@
 	import { BitmapLayer } from '@deck.gl/layers';
 	import { OrthographicView } from '@deck.gl/core';
 	import { ChevronDown, ChevronUp } from '@lucide/svelte';
+	import arrowRight from "$svg/arrow-right.svg";
 
 	let sliderEl; // component binding
 	let deckContainer;
@@ -45,15 +46,22 @@
 		return (currentCPI / historicalCPI).toFixed(2);
 	});
     
-    // Debug logging (disable in production to reduce main-thread work)
-    const DEBUG_MODAL = false;
+    // Log when props change (must be in $effect to react to changes)
     $effect(() => {
-        if (!DEBUG_MODAL) return;
-        console.log('Modal props received:', { instanceSelected, relatedImageIds, showModal, relatedMetadata, aspectRatioMap: aspectRatioMap?.size });
+        console.log('Modal props received:', { 
+            instanceSelected, 
+            relatedImageIds, 
+            showModal,
+            relatedMetadata,
+            aspectRatioMap: aspectRatioMap ? `Map with ${aspectRatioMap.size} entries` : null
+        });
     });
+
+    // Log activeFilter and tourFilter when modal loads (when shown)
     $effect(() => {
-        if (!DEBUG_MODAL || !showModal) return;
-        console.log('Modal on load — activeFilter:', activeFilter, 'tourFilter:', tourFilter);
+        if (showModal) {
+            console.log('Modal on load — activeFilter:', activeFilter, 'tourFilter:', tourFilter);
+        }
     });
     
     function closeModal() {
@@ -126,13 +134,8 @@
 		}
 		lastIdsKey = idsKey;
 
-		const rect = deckContainer.getBoundingClientRect();
-		const pixelRatio = typeof window !== 'undefined' ? Math.min(2, window.devicePixelRatio || 1) : 1;
 		deck = new Deck({
 			parent: deckContainer,
-			width: rect.width > 0 ? rect.width : undefined,
-			height: rect.height > 0 ? rect.height : undefined,
-			useDevicePixels: pixelRatio,
 			initialViewState: {
 				target: [0, 0, 0],
 				zoom: -3,
@@ -172,44 +175,52 @@
 
 <div class="modal">
 	<div class="info-container">
-		<button class="close-button" onclick={closeModal}>Back</button>
-		{#if onOpenRandom}
-			<button class="random-button" onclick={onOpenRandom}>Random</button>
-		{/if}
+		<button class="close-button" onclick={closeModal}>
+			<div style="transform: rotate(180deg); width: 20px;">
+				{@html arrowRight}
+			</div>
+			Back
+
+		</button>
 		<div class="info-content">
-			<p><span class="title">{relatedMetadata?.title}</span></p>
-			<p>
-				{#if relatedMetadata?.city}
-				<span class="location">{relatedMetadata?.city?.replace(/\$|\?/g, match => match === '$' ? ', ' : ' ')}</span>
-				 | 
-				{/if}
-				<span class="year">Menu Year: {relatedMetadata?.year}</span>
-			</p>
+			<p class="year"><span>Menu Year: {relatedMetadata?.year}</span></p>
+			<p class="title"><span>{relatedMetadata?.restaurant_title}</span></p>
+			{#if relatedMetadata?.geography_city}
+				<p class="location">
+					<span class="">{decodeURIComponent(relatedMetadata?.geography_city)}</span>
+				</p>
+			{/if}
+			{#if inflationValue && relatedMetadata?.year}
+				<div class="inflation-calc">
+					<span class="dollar">$1</span> in {relatedMetadata.year} ≈ <span class="dollar">${inflationValue}</span> today
+				</div>
+			{/if}
+			<div class="sidebar" class:expanded={sidebarExpanded}>
+				<p>The menu presents a stark contrast between very simple, everyday dishes (Oatmeal, Frankfurter Wurst, Salted Mackerel) and an exceptionally luxurious offering from the era, 'Filet v. Schildkrote m. Truffeln' (Fillet of Turtle with Truffles). This blend is characteristic of a high-class establishment, such as a grand hotel or ocean liner, catering to the diverse tastes of an affluent clientele. While many items are basic, the presence of a true haute cuisine dish featuring rare and expensive ingredients like turtle and truffles signifies a highly capable kitchen and elevates the menu to a fine dining level.</p>
+				<div class="black-scroll" role="button" tabindex="0" aria-expanded={sidebarExpanded} aria-label={sidebarExpanded ? 'Shrink sidebar' : 'Expand sidebar'} onclick={toggleSidebar} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSidebar(); } }}>
+					<p>{sidebarExpanded ? 'SHRINK' : 'EXPAND'}</p>
+					<span>
+						{#if sidebarExpanded}
+							<ChevronUp size="15" color="#000" />
+						{:else}
+							<ChevronDown size="15" color="#000" />
+						{/if}
+					</span>
+				</div>
+			</div>
 		</div>
 	</div>
-	<div class="sidebar" class:expanded={sidebarExpanded}>
-		{#if inflationValue && relatedMetadata?.year}
-		<div class="inflation-calc">
-			<span class="dollar">$1</span> in {relatedMetadata.year} ≈ <span class="dollar">${inflationValue}</span> today
-		</div>
-		{/if}
-		<p>The menu presents a stark contrast between very simple, everyday dishes (Oatmeal, Frankfurter Wurst, Salted Mackerel) and an exceptionally luxurious offering from the era, 'Filet v. Schildkrote m. Truffeln' (Fillet of Turtle with Truffles). This blend is characteristic of a high-class establishment, such as a grand hotel or ocean liner, catering to the diverse tastes of an affluent clientele. While many items are basic, the presence of a true haute cuisine dish featuring rare and expensive ingredients like turtle and truffles signifies a highly capable kitchen and elevates the menu to a fine dining level.</p>
-		<div class="black-scroll" onclick={toggleSidebar}>
-			<p>{sidebarExpanded ? 'SHRINK' : 'EXPAND'}</p>
-			<span>
-				{#if sidebarExpanded}
-					<ChevronUp size="15" color="#000" />
-				{:else}
-					<ChevronDown size="15" color="#000" />
-				{/if}
-			</span>
-		</div>
-	</div>
+
     <div class="deck-container" bind:this={deckContainer}>
 	</div>
+
+	{#if onOpenRandom}
+		<button class="random-button" onclick={onOpenRandom}>See Another Menu</button>
+	{/if}
 </div>
 
 <style>
+
 	.inflation-calc {
 		padding: 12px 10px;
 		background: #222;
@@ -252,6 +263,7 @@
 		text-align: center;
 		cursor: pointer;
 		border-top: none;
+		display: none;
 	}
 	.black-scroll span {
 		transform: translate(0,1px);
@@ -270,12 +282,12 @@
 		font-family: 'Atlas Grotesk';
 	}
 	.sidebar {
-		position: absolute;
+		/* position: absolute;
 		left: 0;
-		top: 69px;
-		width: 290px;
+		top: 69px; */
+		/* width: 290px; */
+		width: 100%;
 		z-index: 1000;
-		height: 180px;
 		border: 1px solid black;
 		overflow: scroll;
 		padding: 0px;
@@ -285,38 +297,47 @@
 		height: 500px;
 	}
 	.info-content p {
-		line-height: 1.1;
-		font-size: 16px;
-		margin: 0;
+		/* line-height: 1.1; */
+		/* font-size: 16px; */
 	}
 	.info-content {
-		padding-left: 10px;
 	}
 	.title {
-		font-size: 16px;
-		font-weight: 600;
-		margin-right: 10px;
+		font-size: 28px;
+		font-weight: 400;
+		line-height: 1.1;
+		margin-bottom: 0px;
+		margin-top: 0px;
 	}
 	.location {
 		font-weight: 600;
-		margin-right: 5px;
+		margin-top: 10px;
+		font-family: 'Atlas Grotesk';
+		margin-bottom: 30px;
+		font-size: 14px;
+		
 	}
-	.year, .location {
-		font-size: 16px;
+	.year {
+		font-size: 20px;
 		opacity: 1;
+		font-style: italic;
+		font-weight: 600;
 		font-family: 'EB Garamond';
+		margin-bottom: 0px;
 	}
 	.info-container {
 		position: absolute;
 		top: 0;
 		left: 0;
-		background: #fffef5;
-		width: 100%;
-		height: 70px;
+		background: #F8F9D8;
+		width: 300px;
+		height: 100%;
 		font-family: var(--sans);
 		display: flex;
-		align-items: center;
-		border-bottom: 1px solid #000;
+		flex-direction: column;
+		align-items: flex-start;
+		z-index: 100000;
+		padding: 20px 10px;
 		
 	}
     .modal {
@@ -338,37 +359,41 @@
         height: calc(100% - 70px);
     }
 
-    .close-button {
-        background-color: #333;
-        color: white;
-        border: none;
-        cursor: pointer;
-        font-size: 16px;
-		font-family: 'Atlas Grotesk';
-        z-index: 1001;
-		margin-right: 20px;
-		width: 100px;
-		margin: 0;
-		height: 100%;
-		border-radius: 0;
+    .close-button, .random-button {
+		background-color: white;
+		color: black;
+		cursor: pointer;
+		z-index: 1001;
+		border: 1px solid black;
+		display: flex;
+		gap: 7px;
+		align-items: center;
+		text-transform: uppercase;
+		font-size: 16px;
+		font-weight: 900;
+		-webkit-font-smoothing: antialiased;
+		padding: 15px 20px;
+		font-family: 'EB Garamond';
     }
+
+	.random-button {
+		position: fixed;
+		top: 100vh;
+		right: 0;
+		left: 340px;
+		width: 210px;
+		text-align: center;
+		height: 50px;
+		gap: 0;
+		background: #000;
+		margin: 0 auto;
+		transform: translate(0, calc(-100% - 30px));
+		display: block;
+		background: white;
+	}
 
     .close-button:hover {
         background-color: #555;
-    }
-
-    .random-button {
-        background-color: #555;
-        color: white;
-        border: none;
-        cursor: pointer;
-        font-size: 16px;
-        font-family: 'Atlas Grotesk';
-        z-index: 1001;
-        margin-right: 10px;
-        width: 90px;
-        height: 100%;
-        border-radius: 0;
     }
 
     .random-button:hover {

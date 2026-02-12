@@ -32,8 +32,8 @@
 	}
 
 	:global(.wordmark #color-stroke)  {
-		opacity: 0.4;
-		filter: blur(0.2px);
+		opacity: 0.9;
+		/* filter: blur(0.2px); */
     	transform: translate(4px, 5px);
 	}
 

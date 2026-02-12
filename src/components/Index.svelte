@@ -11,7 +11,7 @@
 	import minus from "$svg/minus.svg";
 	import { Squirrel, Turtle, Bird, ArrowUp, ArrowDown, ArrowLeft, ArrowRight } from "@lucide/svelte";
 	import Header from "$components/Header.svelte";
-	import { fade } from "svelte/transition";
+	import { fade, slide } from "svelte/transition";
 
 
 	let sootElement;
@@ -28,6 +28,8 @@
 	let autocompletes = [];
 	let controls = $state(null);
 	let css = null;  // compactSpaceScene reference for zooming
+	let sootRenderer = $state(null);  // Three.js WebGLRenderer for pause/resume when modal is open
+	let sootAnimationLoop = null;      // saved callback to restore after pause
 	let lastSearchText = null;
 	let searchInput = "";
 	let showAutocompletes = false;
@@ -38,14 +40,14 @@
 	let tourFilter = $state(null);
 
 	let activeFilter = $state(null); // Track the currently selected filter
+	/** When a search result is clicked: 'state' | 'city' | null */
+	let searchClickedType = $state(null);
 	let geocoderContainer;
 	let geocoder;
 	let lastTouchEndTime = 0;
 	let tour = $state(true);
 	let tourMinimized = $state(false);
 	let showControlsPanel = $state(false);
-
-	const DEBUG_SEARCH = false; // set true to log geocoder/filter debug
 
 	// Controls tuning - adjustable via GUI
 	let controlSettings = $state({
@@ -245,11 +247,12 @@
 		// if (tourStep === 1) {
 		// 	changeFilterByIndex(2);
 		// }
+		
 		if(tourStep === 1) {
 			// controls.maxDistance = 2.5;
 			filterTag("focus")
 			setTimeout(() => {
-				zoomToInstance(controls, css, "de0e09c1-172d-4e38-ae5a-ddf243184d77", 600, 1, { x: -.5, y: -.3 });
+				zoomToInstance(controls, css, "21f8cf5a-2ccd-4bbd-a327-15d8099a7b1e", 600, 1, { x: -.5, y: -.4 });
 				// setTimeout(() => {
 				// 	controls.maxDistance = 2.5;
 				// }, 1000)
@@ -258,22 +261,49 @@
 		if(tourStep === 2) {		
 			filterTag("delmonicos");
 			setTimeout(() => {
-				zoomToInstance(controls, css, "e26ff4ec-017d-4f31-9745-3cc6ac618325", 1500, 2.5, { x: -.2, y: -0.15 });
+				zoomToInstance(controls, css, "8ab8f50d-05d4-43f2-8f2a-263a8d97f795", 1500, 50, { x: 0, y: 0 });
 			}, 1000)
 		}
-		if(tourStep === 3) {			
+		if(tourStep === 3) {
+			if(activeFilter !== "delmonicos"){
+				filterTag("delmonicos");
+			}
+			setTimeout(() => {
+				zoomToInstance(controls, css, "8ab8f50d-05d4-43f2-8f2a-263a8d97f795", 1500, 1, { x: -.4, y: -0.35 });
+			}, 3000)
+		}
+		if(tourStep === 4) {
+			if(activeFilter !== "delmonicos"){
+				filterTag("delmonicos");
+			}
+			setTimeout(() => {
+				zoomToInstance(controls, css, "1a34bf66-40c8-4074-b78a-ebc568d68517", 1500, 1, { x: -.4, y: -0.35 });
+			}, 1000)
+		}
+		if(tourStep === 5) {			
 			filterTag("off");
 			setTimeout(() => {
-				zoomToInstance(controls, css, "ec6eb893-c3d9-49d5-af49-c1c2aa036bd4", 1500, 2.5, { x: -.2, y: -0.15 });
+				zoomToInstance(controls, css, "1e54d1a5-7aa5-463f-b2c0-4d4df56dcd59", 1500, 1.5, { x: -.2, y: -0.15 });
 			}, 1000)
 		}
-		if(tourStep === 4) {		
+		if(tourStep === 6) {	
+			if(activeFilter !== "off"){
+				filterTag("off");
+			}
+			setTimeout(() => {
+				zoomToInstance(controls, css, "d0ad029e-0858-4540-9112-f21b131a2999", 1500, 1.5, { x: -.2, y: -0.15 });
+			}, 1000)
+		}
+		if(tourStep === 7) {		
 			filterTag("hist");
 			setTimeout(() => {
-				zoomToInstance(controls, css, "e26ff4ec-017d-4f31-9745-3cc6ac618325", 1500, 2.5, { x: -.2, y: -0.15 });
+				zoomToInstance(controls, css, "d92dda48-e0a0-4565-b1ea-69fd4fc60e6d", 1500, 1.2, { x: -.5, y: -.5 });
 			}, 1000)
 		}
-		if(tourStep === 5) {		
+		if(tourStep === 8) {		
+			changeFilterByIndex(2);
+		}
+		if(tourStep === 9) {		
 			clearFilter();
 		}
 	});
@@ -351,15 +381,29 @@
 		}
 	});
 
-	// Pause soot's Three.js render loop when modal is open so DeckGL isn't competing for GPU.
-	// Soot should expose: expose.pauseRendering() and expose.resumeRendering().
-	// See docs/THREEJS_PAUSE_RENDERING.md for how to implement in a Three.js render loop.
+	// Pause soot's Three.js render loop when modal is open so DeckGL isn't competing for GPU
 	$effect(() => {
-		if (!sootElement?.expose) return;
-		if (showModal) {
-			sootElement.expose.pauseRendering?.();
+		const modalOpen = showModal;
+		const renderer = sootRenderer;
+		const expose = sootElement?.expose;
+
+		if (expose?.pauseRendering && expose?.resumeRendering) {
+			if (modalOpen) expose.pauseRendering();
+			else expose.resumeRendering();
+			return;
+		}
+
+		if (!renderer || typeof renderer.setAnimationLoop !== 'function') return;
+
+		if (modalOpen) {
+			// Save current loop (Three.js stores it; try common internal names)
+			sootAnimationLoop = renderer._animationLoop ?? renderer.animationLoop ?? null;
+			renderer.setAnimationLoop(null);
 		} else {
-			sootElement.expose.resumeRendering?.();
+			if (sootAnimationLoop != null) {
+				renderer.setAnimationLoop(sootAnimationLoop);
+				sootAnimationLoop = null;
+			}
 		}
 	});
 
@@ -368,48 +412,96 @@
 		const hasContainer = !!geocoderContainer;
 		const citiesLen = citiesList?.length ?? 0;
 		const statesLen = statesList?.length ?? 0;
-		if (DEBUG_SEARCH) console.log('[Geocoder effect] run', { hasContainer, citiesLen, statesLen, activeFilter: activeFilter != null, tourFilter: tourFilter != null });
-		if (geocoderContainer && citiesList && citiesList.length > 0 && statesList && statesList.length > 0) {
-			setTimeout(() => {
-				if (DEBUG_SEARCH) console.log('[Geocoder effect] calling initializeGeocoder');
-				initializeGeocoder(citiesList, statesList);
-			}, 100);
+		console.log('[Geocoder suggest] effect run', { hasContainer, citiesLen, statesLen });
+		if (!geocoderContainer) {
+			console.log('[Geocoder suggest] suggest wont fire: no geocoderContainer (element not mounted yet)');
+			return;
 		}
+		if (!citiesList || citiesList.length === 0) {
+			console.log('[Geocoder suggest] suggest wont fire: citiesList empty or null');
+			return;
+		}
+		if (!statesList || statesList.length === 0) {
+			console.log('[Geocoder suggest] suggest wont fire: statesList empty or null');
+			return;
+		}
+		setTimeout(() => {
+			console.log('[Geocoder suggest] calling initializeGeocoder');
+			initializeGeocoder(citiesList, statesList);
+		}, 100);
 	});
 
+	async function restFilter(rest){
+		console.log('[Search debug] restFilter called', rest);
+		activeFilter = rest;
+		tourFilter = rest;
+		searchClickedType = "rest";
+		// activeFilter = { raw: rest, label: rest };
+		await sootElement?.expose?.executeSearch(rest);
+	}
+
+	async function rareFilter(rare){
+		console.log('[Search debug] rareFilter called', rare);
+		activeFilter = "rare";
+		tourFilter = rare;
+		searchClickedType = "rare";
+		// activeFilter = { raw: rare, label: rare };
+		await sootElement?.expose?.executeSearch(rare);
+	}
+
 	async function animalFilter(animal){
-		if (DEBUG_SEARCH) console.log('[Search debug] animalFilter called', animal);
-		activeFilter = { raw: animal, label: animal };
+		console.log('[Search debug] animalFilter called', animal);
+		activeFilter = animal;
+		searchClickedType = animal;
 
 		await sootElement?.expose?.executeSearch(animal);
 	}
 
+	async function filtergeoCoderLocation(tag){
+		console.log('[Search debug] filterTag called', tag);
+		
+		tourFilter = tag;
+
+		const decoded = (() => {
+			try { return decodeURIComponent(tag); } catch { return tag; }
+		})();
+		const encodedLocation = encodeURIComponent(decoded);
+
+		if(encodedLocation === "New%20York%2C%20NY") {
+			searchClickedType = "state";
+			activeFilter = "New%20York";
+			await sootElement?.expose?.executeSearch("New%20York");
+		} else {
+			console.log(encodedLocation)
+			activeFilter = encodedLocation;
+			searchClickedType = "geography_city";
+			await sootElement?.expose?.executeSearch(encodedLocation);
+		}
+	}
+
 	async function filterTag(tag){
-		if (DEBUG_SEARCH) console.log('[Search debug] filterTag called', tag);
-		activeFilter = null;
+		if(tag == "focus") {
+			searchClickedType = "tags";
+		} else if(tag == "delmonicos") {
+			searchClickedType = "delmonicos";
+		} else if(tag == "off") {
+			searchClickedType = "tags";
+		} else if(tag == "hist") {
+			searchClickedType = "tags";
+		}
+		activeFilter = tag;
+
+		
+		console.log('[Search debug] filterTag called', tag);
 		tourFilter = tag;
 		// activeFilter = { raw: tag, label: tag };
 		await sootElement?.expose?.executeSearch(tag);
 	}
 	
-	async function filter(location){
-		if (DEBUG_SEARCH) console.log('[Search debug] filter (location) called', location);
-		// Decode first in case value is already URL-encoded (e.g. from metadata)
-		const decoded = (() => {
-			try { return decodeURIComponent(location); } catch { return location; }
-		})();
-		// Set active filter
-		activeFilter = { raw: decoded, label: decoded };
-		// Encode once for executeSearch
-		const encodedLocation = encodeURIComponent(decoded);
-
-		await sootElement?.expose?.executeSearch(encodedLocation);
-		
-	}
-
 	async function clearFilter() {
-		if (DEBUG_SEARCH) console.log('[Search debug] clearFilter called');
+		console.log('[Search debug] clearFilter called');
 		activeFilter = null;
+		searchClickedType = null;
 		// controls.maxDistance = 300;
 		
 		// Reset to default view or clear search
@@ -420,6 +512,10 @@
 	}
 
 	function openRandomModal() {
+
+		console.log("running openRandomModal", searchClickedType, activeFilter, tourFilter);
+
+
 		if (!metaData?.length || !imageIdToMenuId.size) return;
 
 		const safeDecode = (s) => {
@@ -433,24 +529,28 @@
 
 		let rows = metaData.filter((row) => row.filename);
 
-		if (activeFilter != null) {
-			// When activeFilter is set, ignore tourFilter and filter by geography_city
-			const matchCity = activeFilter.raw != null ? String(activeFilter.raw).trim() : '';
-			if (matchCity) {
-				rows = rows.filter((row) => safeDecode(row.geography_city) === matchCity);
-			}
-		} else if (tourFilter != null) {
-			const tour = String(tourFilter).toLowerCase();
-			if (tour === 'focus') {
-				rows = rows.filter((row) => tagsContain(row.tags, 'focus'));
-			} else if (tour === 'delmonicos') {
-				rows = rows.filter((row) => row.rest === 'delmonicos');
-			} else if (tour === 'off') {
-				rows = rows.filter((row) => tagsContain(row.tags, 'off'));
-			} else if (tour === 'hist') {
-				rows = rows.filter((row) => tagsContain(row.tags, 'hist'));
+		if (activeFilter != null && searchClickedType) {
+			const raw = typeof activeFilter === 'object' && activeFilter !== null && 'raw' in activeFilter ? activeFilter.raw : activeFilter;
+			const matchValue = raw != null ? String(raw).trim() : '';
+			if (matchValue) {
+				const column = searchClickedType;
+				rows = rows.filter((row) => (row[column] ?? '').trim() === matchValue);
 			}
 		}
+
+		console.log(rows)
+		// else if (tourFilter != null) {
+		// 	const tour = String(tourFilter).toLowerCase();
+		// 	if (tour === 'focus') {
+		// 		rows = rows.filter((row) => tagsContain(row.tags, 'focus'));
+		// 	} else if (tour === 'delmonicos') {
+		// 		rows = rows.filter((row) => row.rest === 'delmonicos');
+		// 	} else if (tour === 'off') {
+		// 		rows = rows.filter((row) => tagsContain(row.tags, 'off'));
+		// 	} else if (tour === 'hist') {
+		// 		rows = rows.filter((row) => tagsContain(row.tags, 'hist'));
+		// 	}
+		// }
 
 		const imageIds = rows
 			.map((row) => row.filename.replace(/\.jpg$/i, ''))
@@ -462,24 +562,25 @@
 	}
 
 	async function changeFilterByIndex(index) {
-		if (DEBUG_SEARCH) console.log('[Search debug] changeFilterByIndex called', index);
+		console.log('[Search debug] changeFilterByIndex called', index);
 		const views = await sootElement?.expose?.getViews();
+		console.log(views)
 		if (views && views.length > 0) {
-			activeFilter = { raw: views[index].displayName, label: views[index].displayName };
+			activeFilter = views[index].displayName;
 			sootElement?.expose?.setActiveView(views[index].id);
 		}
 	}
 
 	function initializeGeocoder(cities, states) {
-		if (DEBUG_SEARCH) console.log('[Search debug] initializeGeocoder called', { citiesCount: cities?.length, statesCount: states?.length });
+		console.log('[Geocoder suggest] initializeGeocoder called', { citiesCount: cities?.length, statesCount: states?.length });
 		if (!geocoderContainer || !cities || cities.length === 0 || !states || states.length === 0) {
-			if (DEBUG_SEARCH) console.log('[Search debug] initializeGeocoder early return (missing container or data)');
+			console.log('[Geocoder suggest] initializeGeocoder early return (missing container or data)');
 			return;
 		}
 
 		// Clean up existing geocoder if any (remove DOM only; .off() requires listener ref so we don't call it)
 		if (geocoder) {
-			if (DEBUG_SEARCH) console.log('[Search debug] initializeGeocoder cleaning up existing geocoder (re-init)');
+			console.log('[Search debug] initializeGeocoder cleaning up existing geocoder (re-init)');
 			const geocoderElement = geocoderContainer.querySelector('.mapboxgl-ctrl-geocoder');
 			if (geocoderElement) {
 				geocoderElement.remove();
@@ -492,9 +593,10 @@
 
 		// Geocoder uses only citiesList and statesList - no other sources
 		const localGeocoder = (query) => {
+			console.log('[Geocoder suggest] localGeocoder CALLED', { query: query ?? '(null)', type: typeof query });
 			const queryLower = (query || '').toLowerCase().trim();
 			if (!queryLower) {
-				if (DEBUG_SEARCH) console.log('[Search debug] localGeocoder invoked with empty query (focus or clear)');
+				console.log('[Geocoder suggest] localGeocoder returning [] - empty query (focus/clear or whitespace only)');
 				return [];
 			}
 			const cityMatches = cities
@@ -518,7 +620,11 @@
 				}));
 
 			const results = [...cityMatches, ...stateMatches];
-			if (DEBUG_SEARCH) console.log('[Search debug] localGeocoder invoked', { query: query?.slice(0, 50), queryLower: queryLower?.slice(0, 50), resultsCount: results.length });
+			if (results.length === 0) {
+				console.log('[Geocoder suggest] localGeocoder returning [] - no city or state matches for', JSON.stringify(queryLower), '| cities sample:', cities.slice(0, 3).map(decodeDisplay), '| states sample:', (states || []).slice(0, 3).map(decodeDisplay));
+			} else {
+				console.log('[Geocoder suggest] localGeocoder returning', results.length, 'results', results.map(r => r.place_name));
+			}
 			return results;
 		};
 
@@ -542,10 +648,12 @@
 
 		// Handle result selection
 		geocoder.on('result', (e) => {
-			if (DEBUG_SEARCH) console.log('[Search debug] geocoder "result" event (user selected suggestion)', e.result?.place_name);
+			console.log('[Search debug] geocoder "result" event (user selected suggestion)', e.result?.place_name);
 			const result = e.result;
 			if (result.properties?.location) {
-				filter(result.properties.location);
+				const location = result.properties.location;
+				searchClickedType = (states || []).includes(location) ? 'state' : 'geography_city';
+				filtergeoCoderLocation(location);
 			}
 		});
 
@@ -561,26 +669,29 @@
 		
 		// Use MutationObserver to filter out invalid suggestions in real-time
 		const suggestionsContainer = geocoderElement.querySelector('.mapboxgl-ctrl-geocoder--suggestions');
-		if (suggestionsContainer) {
+		if (!suggestionsContainer) {
+			console.log('[Geocoder suggest] suggestionsContainer not found at init - Mapbox may create it on first focus; suggestions may still work');
+		} else {
 			const observer = new MutationObserver(() => {
 				const suggestions = suggestionsContainer.querySelectorAll('.mapboxgl-ctrl-geocoder--suggestion');
 				suggestions.forEach(suggestion => {
 					const placeName = suggestion.textContent?.trim() || suggestion.innerText?.trim();
 					if (placeName && !validDisplayNames.has(placeName)) {
+						console.log('[Geocoder suggest] REMOVED suggestion (not in validDisplayNames):', JSON.stringify(placeName), '| validDisplayNames has:', validDisplayNames.has(placeName), '| size:', validDisplayNames.size);
 						suggestion.remove();
 					}
 				});
 			});
-			
-			observer.observe(suggestionsContainer, {
-				childList: true,
-				subtree: true
-			});
+			observer.observe(suggestionsContainer, { childList: true, subtree: true });
 		}
 		
 		// Also filter on results event as a backup
 		geocoder.on('results', (e) => {
-			if (DEBUG_SEARCH) console.log('[Search debug] geocoder "results" event (suggestions shown)', e.results?.length ?? 0, 'results');
+			const count = e.results?.length ?? 0;
+			console.log('[Geocoder suggest] "results" event (suggestions shown)', count, 'results');
+			if (count === 0) {
+				console.log('[Geocoder suggest] 0 results shown - either localGeocoder was not called by Mapbox, or it returned [], or all suggestions were removed by observer');
+			}
 			if (e.results && Array.isArray(e.results)) {
 				const invalidCount = e.results.filter(result => {
 					const placeName = result.place_name;
@@ -588,6 +699,7 @@
 				}).length;
 				
 				if (invalidCount > 0) {
+					console.log('[Geocoder suggest] results event: removing', invalidCount, 'invalid suggestions (not in validDisplayNames)');
 					setTimeout(() => {
 						const suggestions = geocoderElement.querySelectorAll('.mapboxgl-ctrl-geocoder--suggestion');
 						suggestions.forEach(suggestion => {
@@ -1033,6 +1145,11 @@
 						css = dataSource.compactSpaceScene;
 						const renderTarget = dataSource.renderTarget;
 						controls = dataSource.controls;
+						// Capture Three.js WebGLRenderer for pause/resume when modal is open (setAnimationLoop(null) / setAnimationLoop(callback))
+						const r = dataSource.renderer ?? renderTarget?.renderer ?? (typeof renderTarget?.setAnimationLoop === 'function' ? renderTarget : null);
+						if (r && typeof r.setAnimationLoop === 'function') {
+							sootRenderer = r;
+						}
 						const space = css.space;
 						const camera = renderTarget?.threeCamera;
 						const canvas = sootElement.shadowRoot.querySelector('canvas');
@@ -1047,9 +1164,14 @@
 						// Get views and instances
 						const views = space.collections.Views;
 						const instances = space.collections.Instances;
+						const viewList = Object.values(views);
 						
-						// Find initial CATEGORY view
-						let currentCategoryView = Object.values(views).find(v => v.parameters?.type === 'CATEGORY');
+						// Use the actually active view (savedLayout) for initial labels; fallback to first CATEGORY only if not set
+						const activeViewId = savedLayout;
+						const activeView = activeViewId && (views[activeViewId] ?? viewList.find(v => v.id === activeViewId));
+						let currentCategoryView =
+							activeView?.parameters?.type === 'CATEGORY' ? activeView
+							: viewList.find(v => v.parameters?.type === 'CATEGORY') ?? null;
 						
 						if (!currentCategoryView) {
 							return;
@@ -1092,8 +1214,7 @@
 							return true; // Changed
 						}
 						
-						// Initial build
-						rebuildCategoryInstances(currentCategoryView.parameters.property);
+						// No initial build here: wait for changeLayout so we use the view soot actually applied (avoids wrong view on load)
 						
 						// Function to compute world positions
 						function computeWorldPositions() {
@@ -1182,6 +1303,18 @@
 						// Listen for camera changes (throttled)
 						controls.addEventListener('change', () => throttledUpdateScreenLabels());
 						
+						// Fallback: if changeLayout never fired (e.g. soot doesn't emit on initial load), build from savedLayout after a delay
+						setTimeout(() => {
+							if (currentPropertyId !== null) return; // already built from changeLayout
+							const fallbackView = savedLayout && (views[savedLayout] ?? viewList.find(v => v.id === savedLayout));
+							if (fallbackView?.parameters?.type === 'CATEGORY') {
+								currentCategoryView = fallbackView;
+								rebuildCategoryInstances(fallbackView.parameters.property);
+								worldLabels = computeWorldPositions();
+								throttledUpdateScreenLabels();
+							}
+						}, 3500);
+						
 						// Minimize tour on first canvas interaction
 						controls.addEventListener('start', () => {
 							if (tour && !tourMinimized) {
@@ -1207,6 +1340,7 @@
 									
 									setTimeout(() => {
 										const newPropertyId = newView.parameters.property;
+										currentCategoryView = newView;
 										rebuildCategoryInstances(newPropertyId);
 										worldLabels = computeWorldPositions();
 										throttledUpdateScreenLabels();
@@ -1232,10 +1366,12 @@
 				}, { passive: true });
 
 				sootElement.addEventListener("selectInstance", async (event) => {
+					
 					const fromTouch = Date.now() - lastTouchEndTime < 250;
 
 					if (fromTouch) {
 						instanceSelected = await sootElement?.expose?.getInstanceDetails(event.detail.eventData.instanceId);
+						console.log(instanceSelected)
 						showModal = true;
 					}
 				}, true);
@@ -1279,12 +1415,18 @@
 		<div transition:fade={{duration: 300}} class="loading-container">
 			<p>Loading...</p>
 			<div class="loading-carousel">
-					<img 
+				<img 
+				class="loading-menu-image"
+				src="assets/loading.webp"
+				alt="Loading menu"
+				transition:fade={{duration: 300}}
+			/>
+					<!-- <img 
 						class="loading-menu-image"
 						src="https://s3.us-east-1.amazonaws.com/pudding.cool/menu-images/{loadingMenuImages[loadingImageIndex]}.jpg"
 						alt="Loading menu"
 						transition:fade={{duration: 300}}
-					/>
+					/> -->
 			</div>
 		</div>
 	{/if}
@@ -1299,7 +1441,7 @@
 	
 	<soot-publication
 		bind:this={sootElement}
-		slug="d4758735-2d66-49bb-bbb4-3f3f4bf9085b"
+		slug="2bb935d1-b350-4915-b4f6-e20a4dcace91"
 	>
 		<div slot="overlay-container">
 		</div>
@@ -1319,11 +1461,13 @@
 						tabindex="0"
 						onkeydown={(e) => { if (tourMinimized && (e.key === 'Enter' || e.key === ' ')) tourMinimized = false; }}
 					>
-						<div class="tour-content">
-							{#each tourText[tourStep].content as paragraph}
-								<p>{@html paragraph.value}</p>
-							{/each}
-						</div>
+						{#key tourStep}
+							<div class="tour-content" in:fade={{duration: 600}}>
+								{#each tourText[tourStep].content as paragraph}
+									<p>{@html paragraph.value}</p>
+								{/each}
+							</div>
+						{/key}
 						<div class="tour-buttons">
 							{#if tourStep > 0}
 								<button class="tour-button tour-button-back" onclick={() => tourStep--}>
@@ -1502,12 +1646,19 @@
 							{#if activeFilter}
 								<!-- Show active filter with X button -->
 								<button class="filter-button active-filter" onclick={clearFilter}>
-									{decodeURIComponent(activeFilter.label)} <span class="clear-x">×</span>
+									{decodeURIComponent(activeFilter)} <span class="clear-x">×</span>
 								</button>
 							{:else}
 								<!-- Showfind all filter buttons -->
 								{#each highlightedGeographies as city}
-									<button class="filter-button" onclick={() => filter(city)}>{getCity(city)}</button>
+										<button class="filter-button"
+											onclick={() => {
+												searchClickedType = "geography_city";
+												filtergeoCoderLocation(city);
+											}}
+										>
+											{getCity(city)}
+										</button>
 								{/each}
 								<div class="divider"></div>
 								<button style="" class="filter-button fancy-button" onclick={() => changeFilterByIndex(1)}>States</button>
@@ -1515,12 +1666,12 @@
 
 								<!-- <button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => animalFilter('pretentious')}>Pretentious</button>
 								<button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => animalFilter('casual')}>Casual</button> -->
-								<button style="" class="filter-button fancy-button" onclick={() => animalFilter('plaza')}>Plaza Hotel</button>
-								<button style="" class="filter-button fancy-button" onclick={() => animalFilter('waldorf')}>Waldorf-Astoria</button>
-								<button style="" class="filter-button fancy-button" onclick={() => animalFilter('delmonicos')}>Delmonico's</button>
+								<button style="" class="filter-button fancy-button" onclick={() => restFilter('plaza')}>Plaza Hotel</button>
+								<button style="" class="filter-button fancy-button" onclick={() => restFilter('waldorf')}>Waldorf-Astoria</button>
+								<button style="" class="filter-button fancy-button" onclick={() => restFilter('delmonicos')}>Delmonico's</button>
 								<div class="divider"></div>
 								<!-- <button style="background: #32641d;" class="filter-button fancy-button" onclick={() => animalFilter('obscure')}>Obscure Dishes</button> -->
-								<button style="" class="filter-button fancy-button" onclick={() => animalFilter('rare')}>Uncommon Meats</button>
+								<button style="" class="filter-button fancy-button" onclick={() => rareFilter('rare')}>Uncommon Meats</button>
 								<button style="" class="filter-button fancy-button" onclick={() => animalFilter('squirrel')}><Squirrel size="20" strokeWidth="1.5" color="#000"/></button>
 								<button style="" class="filter-button fancy-button" onclick={() => animalFilter('turtle')}><Turtle size="20" strokeWidth="1.5" color="#000"/></button>
 								<button style="" class="filter-button fancy-button" onclick={() => animalFilter('birdie')}><Bird size="20" strokeWidth="1.5" color="#000"/></button>
@@ -1911,9 +2062,11 @@
 		border-radius: 4px;
 	}
 
-	/* When modal is open, hide soot so its WebGL context isn't composited alongside DeckGL (avoids lag) */
+	/* When modal is open, hide soot so it doesn't compete with DeckGL.
+	   Do NOT use display: none here: it makes soot's container 0×0, soot's ResizeObserver
+	   fires, and soot re-initializes/refetches (many GETs to static.soot.com) → ERR_INSUFFICIENT_RESOURCES.
+	   Keeping dimensions with visibility + pointer-events avoids that. */
 	.soot-publication-hide {
-		display: none !important;
 		visibility: hidden;
 		pointer-events: none;
 	}
@@ -1962,21 +2115,30 @@
 	.loading-container.loading-fade-background {
 		opacity: 0;
 	}
+
+	.loading-container p {
+		font-family: 'Atlas Grotesk', monospace;
+		font-size: 18px;
+		font-weight: 600;
+		color: black;
+		text-transform: uppercase;
+		letter-spacing: 0.02em;
+	}
 	
 	.loading-carousel {
 		display: flex;
 		align-items: center;
 		justify-content: center;
-		width: min(90vw, 400px);
+		width: min(90vw, 900px);
 		height: min(80vh, 500px);
 		transition: opacity 1s ease-out;
 	}
 	
 	.loading-menu-image {
 		max-width: 100%;
-		max-height: 100%;
-		object-fit: contain;
-		box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12);
+		/* max-height: 100%; */
+		/* object-fit: contain; */
+		/* box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12); */
 	}
 
 	/* Category Labels Overlay */
