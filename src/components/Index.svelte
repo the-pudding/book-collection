@@ -31,6 +31,7 @@
 	let css = null;  // compactSpaceScene reference for zooming
 	let sootRenderer = $state(null);  // Three.js WebGLRenderer for pause/resume when modal is open
 	let sootAnimationLoop = null;      // saved callback to restore after pause
+	let sootRenderTarget = $state(null);  // soot's render target for monkey-patch pause when modal is open
 	let lastSearchText = null;
 	let searchInput = "";
 	let showAutocompletes = false;
@@ -270,7 +271,7 @@
 				filterTag("delmonicos");
 			}
 			setTimeout(() => {
-				zoomToInstance(controls, css, "8ab8f50d-05d4-43f2-8f2a-263a8d97f795", 1500, 1, { x: -.4, y: -0.35 });
+				zoomToInstance(controls, css, "8ab8f50d-05d4-43f2-8f2a-263a8d97f795", 1500, 1, { x: -.5, y: -0.4 });
 			}, 3000)
 		}
 		if(tourStep === 4) {
@@ -386,25 +387,26 @@
 	$effect(() => {
 		const modalOpen = showModal;
 		const renderer = sootRenderer;
-		const expose = sootElement?.expose;
+		const renderTarget = sootRenderTarget;
+		const ctrls = controls;
 
-		if (expose?.pauseRendering && expose?.resumeRendering) {
-			if (modalOpen) expose.pauseRendering();
-			else expose.resumeRendering();
-			return;
-		}
-
-		if (!renderer || typeof renderer.setAnimationLoop !== 'function') return;
-
-		if (modalOpen) {
-			// Save current loop (Three.js stores it; try common internal names)
-			sootAnimationLoop = renderer._animationLoop ?? renderer.animationLoop ?? null;
-			renderer.setAnimationLoop(null);
-		} else {
-			if (sootAnimationLoop != null) {
-				renderer.setAnimationLoop(sootAnimationLoop);
-				sootAnimationLoop = null;
+		// Fallback: monkey-patch renderTarget.render to no-op when modal open (soot uses its own loop, not setAnimationLoop)
+		if (renderTarget && typeof renderTarget.render === 'function') {
+			if (modalOpen) {
+				if (!renderTarget._originalRender) {
+					renderTarget._originalRender = renderTarget.render.bind(renderTarget);
+					renderTarget.render = () => {};
+					console.log("monkey-patching renderTarget.render",renderTarget)
+				}
+				if (ctrls && 'enabled' in ctrls) ctrls.enabled = false;
+			} else {
+				if (renderTarget._originalRender) {
+					renderTarget.render = renderTarget._originalRender;
+					delete renderTarget._originalRender;
+				}
+				if (ctrls && 'enabled' in ctrls) ctrls.enabled = true;
 			}
+			return;
 		}
 	});
 
@@ -413,7 +415,6 @@
 		const hasContainer = !!geocoderContainer;
 		const citiesLen = citiesList?.length ?? 0;
 		const statesLen = statesList?.length ?? 0;
-		console.log('[Geocoder suggest] effect run', { hasContainer, citiesLen, statesLen });
 		if (!geocoderContainer) {
 			console.log('[Geocoder suggest] suggest wont fire: no geocoderContainer (element not mounted yet)');
 			return;
@@ -427,7 +428,6 @@
 			return;
 		}
 		setTimeout(() => {
-			console.log('[Geocoder suggest] calling initializeGeocoder');
 			initializeGeocoder(citiesList, statesList);
 		}, 100);
 	});
@@ -1145,7 +1145,9 @@
 						}
 						
 						css = dataSource.compactSpaceScene;
+						console.log(actualMainComp)
 						const renderTarget = dataSource.renderTarget;
+						sootRenderTarget = renderTarget;
 						controls = dataSource.controls;
 						// Capture Three.js WebGLRenderer for pause/resume when modal is open (setAnimationLoop(null) / setAnimationLoop(callback))
 						const r = dataSource.renderer ?? renderTarget?.renderer ?? (typeof renderTarget?.setAnimationLoop === 'function' ? renderTarget : null);
@@ -1759,6 +1761,10 @@
 		/* letter-spacing: -0.01em; */
 	}
 
+	.tour-content p:last-child {
+		margin-bottom: 0;
+	}
+
 	.tour-tab {
 		position: absolute;
 		top: 8px;
@@ -2072,6 +2078,9 @@
 	.soot-publication-hide {
 		visibility: hidden;
 		pointer-events: none;
+		/* content-visibility: hidden; */
+		/* opacity: 0; */
+		/* transform: translate3d(-9999px, -9999px, 0); */
 	}
 	.soot-publication-show {
 	}
@@ -2199,7 +2208,6 @@
 		align-items: center;
 		gap: 1rem;
 		width: 100%;
-		margin-top: 0.5rem;
 	}
 
 	.tour-button {
@@ -2217,6 +2225,7 @@
 		-webkit-font-smoothing: antialiased;
 		-moz-osx-font-smoothing: grayscale;
 		align-items: center;
+		padding-top: 1rem;
 		/* flex: 1; */
 	}
 
@@ -2247,10 +2256,11 @@
 		}
 
 		.tour-content p {
-			font-size: 16.5px;
+			font-size: 18px;
 		}
+
 		.tour-button {
-			font-size: 14px;
+			font-size: 15px;
 		}
 		.pan-zoom-buttons {
 			right: 10px;

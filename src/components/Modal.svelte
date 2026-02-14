@@ -4,20 +4,14 @@
 	import { OrthographicView } from '@deck.gl/core';
 	import { ChevronDown, ChevronUp } from '@lucide/svelte';
 	import arrowRight from "$svg/arrow-right.svg";
-	import { onMount } from "svelte";
 	import {
         getMeta
     } from "$utils/supabase.js";
 
-	let sliderEl; // component binding
 	let deckContainer;
 	let deck;
 	let sidebarExpanded = $state(false);
 	let obscureList = $state([]);
-
-	$effect(() => {
-		console.log('obscureList', obscureList);
-	});
 
     let { activeFilter, aspectRatioMap, instanceSelected, relatedImageIds, showModal = $bindable(), relatedMetadata, sootElement, tourFilter, metaData, onOpenRandom, dimensions } = $props();
 
@@ -54,24 +48,6 @@
 		if (!historicalCPI) return null;
 		return (currentCPI / historicalCPI).toFixed(2);
 	});
-    
-    // Log when props change (must be in $effect to react to changes)
-    $effect(() => {
-        console.log('Modal props received:', { 
-            instanceSelected, 
-            relatedImageIds, 
-            showModal,
-            relatedMetadata,
-            aspectRatioMap: aspectRatioMap ? `Map with ${aspectRatioMap.size} entries` : null
-        });
-    });
-
-    // Log activeFilter and tourFilter when modal loads (when shown)
-    $effect(() => {
-        if (showModal) {
-            console.log('Modal on load — activeFilter:', activeFilter, 'tourFilter:', tourFilter);
-        }
-    });
     
     function closeModal() {
         showModal = false;
@@ -546,10 +522,10 @@
 			left: 5px;
 			transform: translate(0, 67px);
 			right: auto;
-			width: 97px;
-			height: 36px;
-			padding: 5px 2px;
 			font-size: 15px;
+			width: 97px;
+			padding: 0px 5px;
+			line-height: 1.1;
 		}
 	}
 
