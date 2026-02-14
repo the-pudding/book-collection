@@ -22,6 +22,7 @@
 		pointer-events: none;
 		z-index: 10000000;
 		overflow: hidden;
+		
 	}
 	.wordmark {
 		max-width: 14em;
@@ -53,24 +54,19 @@
 
 	@media (max-width: 400px) {
 		.wordmark {
-			max-width: 13em;
+			max-width: 10.5em;
 			padding-left: 8px;
 			/* transform: translate(-18px, -19px) rotate(-4deg); */
 		}
 
 		header {
 			/* existing styles are above, so add only the overlay gradient here */
-			background: linear-gradient(
-				to bottom,
-				rgba(255,252,227,1) 0px,
-				rgba(255,252,227,0.85) 52px,
-				rgba(255,252,227,0) 100px
-			)
+			background: linear-gradient(to bottom, rgb(255 254 245) 0px, rgb(255 254 245) 52px, rgba(255, 252, 227, 0) 100px);
 		}
 	}
 	@media (max-width: 360px) {
 		.wordmark {
-			max-width: 13.5em;
+			max-width: 10.5em;
 			/* transform: translate(-14px, -15px) rotate(-4deg); */
 		}
 	}

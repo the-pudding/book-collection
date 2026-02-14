@@ -12,8 +12,9 @@
 	import { Squirrel, Turtle, Bird, ArrowUp, ArrowDown, ArrowLeft, ArrowRight } from "@lucide/svelte";
 	import Header from "$components/Header.svelte";
 	import { fade, slide } from "svelte/transition";
+	import useWindowDimensions from "$runes/useWindowDimensions.svelte.js";
 
-
+	let dimensions = new useWindowDimensions();
 	let sootElement;
 	let loaded = $state(false);
 	let loadingImageIndex = $state(0);
@@ -261,7 +262,7 @@
 		if(tourStep === 2) {		
 			filterTag("delmonicos");
 			setTimeout(() => {
-				zoomToInstance(controls, css, "8ab8f50d-05d4-43f2-8f2a-263a8d97f795", 1500, 50, { x: 0, y: 0 });
+				zoomToInstance(controls, css, "8ab8f50d-05d4-43f2-8f2a-263a8d97f795", 1500, 50, { x: -.25, y: -.2 });
 			}, 1000)
 		}
 		if(tourStep === 3) {
@@ -629,8 +630,10 @@
 		};
 
 		// Initialize Mapbox Geocoder with localGeocoder for autocomplete
-		// Set localGeocoderOnly to true to ONLY use local geocoder and exclude Mapbox API results
+		// accessToken required: library still calls Mapbox events API. Use VITE_MAPBOX_ACCESS_TOKEN in .env (pk.* token is public; restrict it in Mapbox dashboard by URL).
+		const mapboxToken = import.meta.env.VITE_MAPBOX_ACCESS_TOKEN ?? '';
 		geocoder = new MapboxGeocoder({
+			accessToken: mapboxToken,
 			localGeocoder: localGeocoder,
 			localGeocoderOnly: true, // ONLY use local geocoder, exclude all Mapbox API results
 			placeholder: 'Search cities, states...',
@@ -1413,25 +1416,28 @@
 		<Header />
 		<div transition:fade={{duration: 300}} class="loading-container">
 			<p>Loading...</p>
-			<div class="loading-carousel">
+			{#if dimensions.width >= 450}
+				<div class="loading-carousel">
+					<img 
+					class="loading-menu-image"
+					src="assets/loading.webp"
+					alt="Loading menu"
+					transition:fade={{duration: 300}}
+					/>
+				</div>
+			{:else if dimensions.width > 0}
 				<img 
 				class="loading-menu-image"
-				src="assets/loading.webp"
+				src="https://s3.us-east-1.amazonaws.com/pudding.cool/menu-images/{loadingMenuImages[loadingImageIndex]}.jpg"
 				alt="Loading menu"
 				transition:fade={{duration: 300}}
-			/>
-					<!-- <img 
-						class="loading-menu-image"
-						src="https://s3.us-east-1.amazonaws.com/pudding.cool/menu-images/{loadingMenuImages[loadingImageIndex]}.jpg"
-						alt="Loading menu"
-						transition:fade={{duration: 300}}
-					/> -->
-			</div>
+				/>
+			{/if}
 		</div>
 	{/if}
 
 	<div class="modal-container {showModal ? 'show-modal' : 'hide-modal'}">
-		<Modal bind:showModal {instanceSelected} relatedMetadata={relatedImageIds[1]} relatedImageIds={relatedImageIds[0]} {sootElement} {aspectRatioMap} {activeFilter} {tourFilter} {metaData} onOpenRandom={openRandomModal} />
+		<Modal bind:showModal {instanceSelected} relatedMetadata={relatedImageIds[1]} relatedImageIds={relatedImageIds[0]} {sootElement} {aspectRatioMap} {activeFilter} {tourFilter} {metaData} onOpenRandom={openRandomModal} {dimensions} />
 	</div>
 
 	<div id="soot-publication" class="{showModal ? 'soot-publication-hide' : 'soot-publication-show'}">
@@ -1670,10 +1676,10 @@
 								<button style="" class="filter-button fancy-button" onclick={() => restFilter('delmonicos')}>Delmonico's</button>
 								<div class="divider"></div>
 								<!-- <button style="background: #32641d;" class="filter-button fancy-button" onclick={() => animalFilter('obscure')}>Obscure Dishes</button> -->
-								<button style="" class="filter-button fancy-button" onclick={() => rareFilter('rare')}>Uncommon Meats</button>
-								<button style="" class="filter-button fancy-button" onclick={() => animalFilter('squirrel')}><Squirrel size="20" strokeWidth="1.5" color="#000"/></button>
-								<button style="" class="filter-button fancy-button" onclick={() => animalFilter('turtle')}><Turtle size="20" strokeWidth="1.5" color="#000"/></button>
-								<button style="" class="filter-button fancy-button" onclick={() => animalFilter('birdie')}><Bird size="20" strokeWidth="1.5" color="#000"/></button>
+								<button style="" class="filter-button mobile-hide fancy-button" onclick={() => rareFilter('rare')}>Uncommon Meats</button>
+								<button style="" class="filter-button mobile-hide fancy-button" onclick={() => animalFilter('squirrel')}><Squirrel size="20" strokeWidth="1.5" color="#000"/></button>
+								<button style="" class="filter-button mobile-hide fancy-button" onclick={() => animalFilter('turtle')}><Turtle size="20" strokeWidth="1.5" color="#000"/></button>
+								<button style="" class="filter-button mobile-hide fancy-button" onclick={() => animalFilter('birdie')}><Bird size="20" strokeWidth="1.5" color="#000"/></button>
 							{/if}
 
 						</div>
@@ -2005,10 +2011,8 @@
 	.pan-btn {
 		width: 32px;
 		height: 32px;
-		border: 1px solid rgb(0 0 0 / 62%);
-    	background: #fffce3;
-		/* border: 1px solid rgba(0,0,0,0.2);
-		background: #FEFCEE; */
+		border: 1px solid rgba(0,0,0,0.62);
+    	background: #fff;
 		cursor: pointer;
 		font-size: 16px;
 		display: flex;
@@ -2076,6 +2080,10 @@
 	}
 	.hide-modal {
 		/* visibility: hidden; */
+	}
+
+	:global(.hide-modal .random-button) {
+		display: none;
 	}
 	.modal-container {
 		transform: translate(-100%,0);
@@ -2226,12 +2234,16 @@
 	}
 
 	@media (max-width: 450px) {
+		.mobile-hide {
+			display: none;
+		}
 		.tour-container {
 			padding: 20px 15px;
 			padding-bottom: 10px;
 			max-width: 800px;
 			width: calc(100% - 20px);
 			letter-spacing: 0em;
+			padding-top: 10px;
 		}
 
 		.tour-content p {
@@ -2243,7 +2255,7 @@
 		.pan-zoom-buttons {
 			right: 10px;
 			position: fixed;
-			top: 60px;
+			top: 45px;
 			z-index: 1000000000;
 		}
 		.zoom-buttons {
@@ -2251,18 +2263,24 @@
 		}
 		.geocoder-container {
 			visibility: visible;
-			top: 38px;
+			top: 22px;
 			width: calc(100vw - 70px);
-			backdrop-filter: blur(0.15rem);
+			backdrop-filter: none;
 			padding: 0;
 			padding-bottom: 10px;
 			padding-right: 10px;
+		}
+		.geocoder-container::after, .geocoder-container::before {
+			background: none;
 		}
 		.pan-row {
 			flex-direction: column;
 		}
 		.title-text {
 			text-align: right;
+			width: 220px;
+			font-size: 16px;
+			margin-top: 4px;
 		}
 		.divider {
 			display: none;
@@ -2272,6 +2290,21 @@
 		}
 		.filter-container button {
 			padding: 4px 7px;
+			background: #fff;
 		}
+		.geocoder-container :global(.mapboxgl-ctrl-geocoder input) {
+			height: 35px;
+		}
+		:global(.mapboxgl-ctrl-geocoder--icon-search) {
+			top: 6px;
+		}
+		:global(.mapboxgl-ctrl-geocoder--icon-close) {
+			top: 6px;
+		}
+
+		:global(.mapboxgl-ctrl-geocoder--button) {
+			background: none;
+		}
+
 	}
 </style>

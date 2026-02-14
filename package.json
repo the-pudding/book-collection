@@ -48,6 +48,7 @@
 		"@loaders.gl/images": "^4.2.0-alpha.6",
 		"@loaders.gl/textures": "^4.2.0-alpha.6",
 		"@mapbox/mapbox-gl-geocoder": "^5.1.2",
+		"@supabase/supabase-js": "^2.95.3",
 		"soot-webcomponents": "^0.1.2"
 	}
 }

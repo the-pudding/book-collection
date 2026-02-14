@@ -4,13 +4,22 @@
 	import { OrthographicView } from '@deck.gl/core';
 	import { ChevronDown, ChevronUp } from '@lucide/svelte';
 	import arrowRight from "$svg/arrow-right.svg";
+	import { onMount } from "svelte";
+	import {
+        getMeta
+    } from "$utils/supabase.js";
 
 	let sliderEl; // component binding
 	let deckContainer;
 	let deck;
 	let sidebarExpanded = $state(false);
+	let obscureList = $state([]);
 
-    let { activeFilter, aspectRatioMap, instanceSelected, relatedImageIds, showModal = $bindable(), relatedMetadata, sootElement, tourFilter, metaData, onOpenRandom } = $props();
+	$effect(() => {
+		console.log('obscureList', obscureList);
+	});
+
+    let { activeFilter, aspectRatioMap, instanceSelected, relatedImageIds, showModal = $bindable(), relatedMetadata, sootElement, tourFilter, metaData, onOpenRandom, dimensions } = $props();
 
 	// Historical CPI data for inflation calculation (base year 1982-84 = 100)
 	const cpiData = {
@@ -171,6 +180,35 @@
 	});
 
 
+	$effect(() => {
+		const current = instanceSelected;
+		if (!current) {
+			obscureList = [];
+			return;
+		}
+		const imageId = typeof current === 'string'
+			? current.replace?.(/.jpg$/i, '')
+			: current?.editableMetadata?.fileName?.replace?.(/.jpg$/i, '');
+		if (!imageId) {
+			obscureList = [];
+			return;
+		}
+		getMeta(imageId).then((meta) => {
+			if (meta && Array.isArray(meta) && meta.length > 0) {
+				obscureList = meta.map((row) => ({
+					...row,
+					obscure_dishes: (row.obscure_dishes || []).filter(
+						(ob) => !(ob.background_knowledge || '').includes('Unidentifiable')
+					)
+				}));
+			} else {
+				obscureList = [];
+			}
+		}).catch(() => {
+			obscureList = [];
+		});
+	});
+
 </script>
 
 <div class="modal">
@@ -195,18 +233,28 @@
 					<span class="dollar">$1</span> in {relatedMetadata.year} ≈ <span class="dollar">${inflationValue}</span> today
 				</div>
 			{/if}
-			<div class="sidebar" class:expanded={sidebarExpanded}>
-				<p>The menu presents a stark contrast between very simple, everyday dishes (Oatmeal, Frankfurter Wurst, Salted Mackerel) and an exceptionally luxurious offering from the era, 'Filet v. Schildkrote m. Truffeln' (Fillet of Turtle with Truffles). This blend is characteristic of a high-class establishment, such as a grand hotel or ocean liner, catering to the diverse tastes of an affluent clientele. While many items are basic, the presence of a true haute cuisine dish featuring rare and expensive ingredients like turtle and truffles signifies a highly capable kitchen and elevates the menu to a fine dining level.</p>
-				<div class="black-scroll" role="button" tabindex="0" aria-expanded={sidebarExpanded} aria-label={sidebarExpanded ? 'Shrink sidebar' : 'Expand sidebar'} onclick={toggleSidebar} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSidebar(); } }}>
-					<p>{sidebarExpanded ? 'SHRINK' : 'EXPAND'}</p>
-					<span>
-						{#if sidebarExpanded}
-							<ChevronUp size="15" color="#000" />
-						{:else}
-							<ChevronDown size="15" color="#000" />
-						{/if}
-					</span>
-				</div>
+		</div>
+		<div class="sidebar" class:expanded={sidebarExpanded}>
+			<p class="sidebar-title" style="font-weight: 600; font-size: 1.1em; padding-bottom: 0px;">Dish Definitions</p>
+			{#if obscureList}
+				{#each obscureList[0]?.obscure_dishes as obscure}
+					<p><b>{obscure.obscure_dish}</b> - {obscure.background_knowledge}</p>
+				{/each}
+				<!-- <p class="sidebar-title" style="font-weight: 600; padding-bottom: 0px;">Full Menu</p>
+
+				{#each obscureList[0]?.dishes as dish}
+					<p style="padding-bottom: 0px; padding-top: 0px;">{dish}</p>
+				{/each} -->
+			{/if}
+			<div class="black-scroll" role="button" tabindex="0" aria-expanded={sidebarExpanded} aria-label={sidebarExpanded ? 'Shrink sidebar' : 'Expand sidebar'} onclick={toggleSidebar} onkeydown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleSidebar(); } }}>
+				<p>{sidebarExpanded ? 'SHRINK' : 'EXPAND'}</p>
+				<span>
+					{#if sidebarExpanded}
+						<ChevronUp size="15" color="#000" />
+					{:else}
+						<ChevronDown size="15" color="#000" />
+					{/if}
+				</span>
 			</div>
 		</div>
 	</div>
@@ -215,7 +263,13 @@
 	</div>
 
 	{#if onOpenRandom}
-		<button class="random-button" onclick={onOpenRandom}>See Another Menu</button>
+		<button class="random-button" onclick={onOpenRandom}>
+			{#if dimensions.width < 450}
+				Next Menu
+			{:else}
+				See Another Menu
+			{/if}
+		</button>
 	{/if}
 </div>
 
@@ -225,11 +279,12 @@
 		padding: 12px 10px;
 		background: #222;
 		color: #fff;
-		font-size: 13px;
+		font-size: 15px;
 		font-family: 'Atlas Grotesk', monospace;
 		text-align: center;
 		border-bottom: 1px solid #000;
 		letter-spacing: 0.02em;
+		margin-top: 20px;
 	}
 	.inflation-calc .dollar {
 		color: #7bed9f;
@@ -241,7 +296,9 @@
 		font-size: 14px;
 		font-family: 'Atlas Grotesk';
 		margin: 0;
-		height: 100%;
+		min-width: 0;
+		overflow-wrap: break-word;
+		word-break: break-word;
 	}
 	.expanded .black-scroll {
 		top: 550px;
@@ -287,10 +344,13 @@
 		top: 69px; */
 		/* width: 290px; */
 		width: 100%;
+		min-width: 0;
 		z-index: 1000;
 		border: 1px solid black;
 		overflow: scroll;
 		padding: 0px;
+		overflow-wrap: break-word;
+		word-break: break-word;
 	}
 
 	.sidebar.expanded {
@@ -308,6 +368,13 @@
 		line-height: 1.1;
 		margin-bottom: 0px;
 		margin-top: 0px;
+		min-width: 0;
+		overflow-wrap: break-word;
+		word-break: break-word;
+	}
+	.title span {
+		overflow-wrap: break-word;
+		word-break: break-word;
 	}
 	.location {
 		font-weight: 600;
@@ -399,5 +466,91 @@
     .random-button:hover {
         background-color: #777;
     }
+
+	.sidebar-title {
+		font-weight: 600;
+		padding-bottom: 0;
+		font-size: 1.1em;
+		min-width: 0;
+		overflow-wrap: break-word;
+		word-break: break-word;
+	}
+
+	@media screen and (max-width: 450px) {
+		.info-container {
+			width: 100%;
+			flex-direction: row;
+			gap: 10px;
+			flex-wrap: wrap;
+			background: none;
+			text-align: right;
+			align-items: flex-start;
+			pointer-events: none;
+			padding-bottom: 5px;
+			padding-left: 5px;
+			padding-right: 5px;
+		}
+		.year {
+			margin-top: 0px;
+			font-size: 14px;
+		}
+		.title {
+			font-size: 20px;
+			line-height: 1;
+		}
+		.close-button {
+			padding: 10px 13px;
+			pointer-events: all;
+		}
+		.info-content {
+			width: calc(100% - 110px);
+		}
+		.location {
+			margin:0;
+			font-size: 12px;
+			margin-top: 5px;
+		}
+		.inflation-calc {
+			margin: 0;
+			margin-top: 0px;
+			background: none;
+			color: black;
+			border: none;
+			text-align: right;
+			padding: 0;
+			font-size: 12px;
+		}
+		.inflation-calc .dollar {
+			color: #000;
+		}
+		.sidebar {
+			align-self: flex-end;
+			text-align: left;
+			font-size: 11px;
+			padding: 5px 0px;
+			background: #fff;
+			width: 200px;
+		}
+		.sidebar p {
+			font-size: 11px;
+			margin: 0;
+			padding-bottom: 0px;
+			background: none;
+			padding-top: 0;
+		}
+		.sidebar p.sidebar-title {
+			margin-bottom: 5px;
+		}
+		.random-button {
+			top: 0;
+			left: 5px;
+			transform: translate(0, 67px);
+			right: auto;
+			width: 97px;
+			height: 36px;
+			padding: 5px 2px;
+			font-size: 15px;
+		}
+	}
 
 </style>
