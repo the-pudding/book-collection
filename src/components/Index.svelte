@@ -63,16 +63,17 @@
 		zoomSpeed: 2.4
 	});
 
-	// $effect(() => {
-		// if (!controls) return;
-		// controls.staticMoving = controlSettings.staticMoving;
-		// controls.dynamicDampingFactor = controlSettings.dynamicDampingFactor;
-		// controls.dynamicDampingFactorWhilePanning = controlSettings.dynamicDampingFactorWhilePanning;
-		// controls.dynamicDampingFactorWhileWheelPanning = controlSettings.dynamicDampingFactorWhileWheelPanning;
-		// controls.panSpeed = controlSettings.panSpeed;
-		// controls.scrollToZoomSpeed = controlSettings.scrollToZoomSpeed;
-		// controls.zoomSpeed = controlSettings.zoomSpeed;
-	// });
+	// Apply control panel sliders to the soot canvas orbit controls
+	$effect(() => {
+		if (!controls) return;
+		controls.staticMoving = controlSettings.staticMoving;
+		controls.dynamicDampingFactor = controlSettings.dynamicDampingFactor;
+		controls.dynamicDampingFactorWhilePanning = controlSettings.dynamicDampingFactorWhilePanning;
+		controls.dynamicDampingFactorWhileWheelPanning = controlSettings.dynamicDampingFactorWhileWheelPanning;
+		controls.panSpeed = controlSettings.panSpeed;
+		controls.scrollToZoomSpeed = controlSettings.scrollToZoomSpeed;
+		controls.zoomSpeed = controlSettings.zoomSpeed;
+	});
 
 	let aspectRatioMap = $state(new Map());
 
@@ -1089,16 +1090,19 @@
 						}
 						
 						if (controls) {
-							controls.smoothZoomMode = 'SCROLL_TO_ZOOM';
 							controls.minDistance = .5;
 							controls.maxDistance = 300;
-							controls.dynamicDampingFactor = .4;
-							controls.dynamicDampingFactorWhilePanning = .9;
-							controls.dynamicDampingFactorWhileWheelPanning = .7;
-							controls.panSpeed = .3;
-							controls.scrollToZoomSpeed = 0.00040;
-							controls.zoomSpeed = 2;
-							controls.staticMoving = false;
+
+							if(dimensions.width > 800) {
+								controls.smoothZoomMode = 'SCROLL_TO_ZOOM';
+								controls.dynamicDampingFactor = .4;
+								controls.dynamicDampingFactorWhilePanning = .9;
+								controls.dynamicDampingFactorWhileWheelPanning = .7;
+								controls.panSpeed = .3;
+								controls.scrollToZoomSpeed = 0.00040;
+								controls.zoomSpeed = 2;
+								controls.staticMoving = false;
+							}
 							// Tuning params applied via $effect from controlSettings
 						}
 					} catch (error) {
