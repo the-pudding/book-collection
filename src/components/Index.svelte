@@ -47,6 +47,7 @@
 	let geocoderContainer;
 	let geocoder;
 	let lastTouchEndTime = 0;
+	let lastMousedownTime = 0;
 	let tour = $state(true);
 	let tourMinimized = $state(false);
 	let showControlsPanel = $state(false);
@@ -1364,18 +1365,27 @@
 					}
 				}, 2000); // Wait for full initialization
 
-				// Prevent instance selection when triggered by touchend (e.g. accidental touch)
-				window.addEventListener('mousedown', () => { 
-					lastTouchEndTime = Date.now(); 
+				// Only show modal for intentional pointer actions; avoid false triggers from scroll-release or stray touches
+				window.addEventListener('touchend', () => {
+					lastTouchEndTime = Date.now();
+				}, { passive: true });
+				window.addEventListener('mousedown', () => {
+					lastMousedownTime = Date.now();
 				}, { passive: true });
 
 				sootElement.addEventListener("selectInstance", async (event) => {
-					
-					const fromTouch = Date.now() - lastTouchEndTime < 250;
+					const now = Date.now();
+					const timeSinceTouchend = now - lastTouchEndTime;
+					const timeSinceMousedown = now - lastMousedownTime;
 
-					if (fromTouch) {
+					// Desktop: selection within 300ms of mousedown = intentional click
+					const fromMouse = timeSinceMousedown < 300;
+					// Mobile: selection 80–400ms after touchend = intentional tap (avoid <80ms scroll-release, ignore stale >400ms)
+					const fromTouchIntentional = timeSinceTouchend >= 80 && timeSinceTouchend < 400;
+
+					if (fromMouse || fromTouchIntentional) {
 						instanceSelected = await sootElement?.expose?.getInstanceDetails(event.detail.eventData.instanceId);
-						console.log(instanceSelected)
+						console.log(instanceSelected);
 						showModal = true;
 					}
 				}, true);
@@ -1932,7 +1942,7 @@
 		align-items: center;
 		justify-content: center;
 		box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-		display: none;
+		/* display: none; */
 	}
 	.controls-panel-toggle:hover {
 		background: rgba(255,255,255,1);
