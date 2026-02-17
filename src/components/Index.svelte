@@ -1946,7 +1946,7 @@
 		align-items: center;
 		justify-content: center;
 		box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-		/* display: none; */
+		display: none;
 	}
 	.controls-panel-toggle:hover {
 		background: rgba(255,255,255,1);
