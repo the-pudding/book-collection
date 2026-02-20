@@ -77,7 +77,7 @@
 			const xCenter = index * (size + spacing);
 			return new BitmapLayer({
 				id: `bitmap-${info.imageId}`,
-				image: `https://s3.us-east-1.amazonaws.com/pudding.cool/menu-images/${info.imageId}.jpg`,
+				image: `https://s3.us-east-1.amazonaws.com/pudding.cool/projects/menu-images/${info.imageId}.jpg`,
 				bounds: [
 					xCenter - width / 2,
 					height / 2,

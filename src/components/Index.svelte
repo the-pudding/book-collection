@@ -64,16 +64,16 @@
 	});
 
 	// Apply control panel sliders to the soot canvas orbit controls
-	$effect(() => {
-		if (!controls) return;
-		controls.staticMoving = controlSettings.staticMoving;
-		controls.dynamicDampingFactor = controlSettings.dynamicDampingFactor;
-		controls.dynamicDampingFactorWhilePanning = controlSettings.dynamicDampingFactorWhilePanning;
-		controls.dynamicDampingFactorWhileWheelPanning = controlSettings.dynamicDampingFactorWhileWheelPanning;
-		controls.panSpeed = controlSettings.panSpeed;
-		controls.scrollToZoomSpeed = controlSettings.scrollToZoomSpeed;
-		controls.zoomSpeed = controlSettings.zoomSpeed;
-	});
+	// $effect(() => {
+	// 	if (!controls) return;
+	// 	controls.staticMoving = controlSettings.staticMoving;
+	// 	controls.dynamicDampingFactor = controlSettings.dynamicDampingFactor;
+	// 	controls.dynamicDampingFactorWhilePanning = controlSettings.dynamicDampingFactorWhilePanning;
+	// 	controls.dynamicDampingFactorWhileWheelPanning = controlSettings.dynamicDampingFactorWhileWheelPanning;
+	// 	controls.panSpeed = controlSettings.panSpeed;
+	// 	controls.scrollToZoomSpeed = controlSettings.scrollToZoomSpeed;
+	// 	controls.zoomSpeed = controlSettings.zoomSpeed;
+	// });
 
 	let aspectRatioMap = $state(new Map());
 
@@ -1682,7 +1682,7 @@
 										</button>
 								{/each}
 								<div class="divider"></div>
-								<button style="" class="filter-button fancy-button" onclick={() => changeFilterByIndex(1)}>States</button>
+								<button style="" class="filter-button fancy-button" onclick={() => changeFilterByIndex(1)}>U.S. States</button>
 								<button style="" class="filter-button fancy-button" onclick={() => changeFilterByIndex(2)}>Menu Setting</button>
 
 								<!-- <button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => animalFilter('pretentious')}>Pretentious</button>
