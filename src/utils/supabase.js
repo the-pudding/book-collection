@@ -8,15 +8,17 @@ console.log(supabaseUrl, supabaseAnonKey)
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
 export const getMeta = async(image_id) => {
-		let { data, error } = await supabase
-		.from('menu_definitions')
-		.select()
-		.eq('image_id', image_id)
-		;
+	let { data, error } = await supabase
+    .from('menu_definitions_with_uuid_3')
+    .select('*')
+    .eq('image_id', image_id);
+
 
 	if (error) {
 		console.error(error)
 		return
+	} else {
+		console.log(data)
 	}
 	return data
 }

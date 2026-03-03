@@ -12,6 +12,7 @@
 	let deck;
 	let sidebarExpanded = $state(false);
 	let obscureList = $state([]);
+	let menuUuid = $state(null);
 
     let { activeFilter, aspectRatioMap, instanceSelected, relatedImageIds, showModal = $bindable(), relatedMetadata, sootElement, tourFilter, metaData, onOpenRandom, dimensions } = $props();
 
@@ -177,6 +178,7 @@
 						(ob) => !(ob.background_knowledge || '').includes('Unidentifiable')
 					)
 				}));
+				menuUuid = meta[0].uuid;
 			} else {
 				obscureList = [];
 			}
@@ -203,6 +205,11 @@
 				<p class="location">
 					<span class="">{decodeURIComponent(relatedMetadata?.geography_city)}</span>
 				</p>
+				{#if menuUuid}
+					<a href="https://digitalcollections.nypl.org/items/{menuUuid}" target="_blank">
+						<p class="menu-uuid">Link to NYPL Menu</p>
+					</a>
+				{/if}
 			{/if}
 			{#if inflationValue && relatedMetadata?.year}
 				<div class="inflation-calc">
