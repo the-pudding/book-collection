@@ -2186,7 +2186,7 @@
 	.category-label {
 		position: absolute;
 		transform: translate(-50%, -100%);
-		pointer-events: auto;
+		pointer-events: none;
 		display: flex;
 		flex-direction: column;
 		align-items: center;

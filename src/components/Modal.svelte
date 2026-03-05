@@ -171,6 +171,7 @@
 			return;
 		}
 		getMeta(imageId).then((meta) => {
+			console.log(meta);
 			if (meta && Array.isArray(meta) && meta.length > 0) {
 				obscureList = meta.map((row) => ({
 					...row,
@@ -178,7 +179,8 @@
 						(ob) => !(ob.background_knowledge || '').includes('Unidentifiable')
 					)
 				}));
-				menuUuid = meta[0].uuid;
+				menuUuid = meta[0]?.uuid;
+				console.log(menuUuid);
 			} else {
 				obscureList = [];
 			}
@@ -205,11 +207,11 @@
 				<p class="location">
 					<span class="">{decodeURIComponent(relatedMetadata?.geography_city)}</span>
 				</p>
-				{#if menuUuid}
-					<a href="https://digitalcollections.nypl.org/items/{menuUuid}" target="_blank">
-						<p class="menu-uuid">Link to NYPL Menu</p>
-					</a>
-				{/if}
+			{/if}
+			{#if menuUuid}
+				<a href="https://digitalcollections.nypl.org/items/{menuUuid}" target="_blank">
+					<p class="menu-uuid">Link to NYPL Menu</p>
+				</a>
 			{/if}
 			{#if inflationValue && relatedMetadata?.year}
 				<div class="inflation-calc">
