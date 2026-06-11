@@ -1,20 +1,106 @@
 <script>
-	import { Deck } from '@deck.gl/core';
-	import { BitmapLayer } from '@deck.gl/layers';
-	import { OrthographicView } from '@deck.gl/core';
 	import { ChevronDown, ChevronUp } from '@lucide/svelte';
 	import arrowRight from "$svg/arrow-right.svg";
 	import {
         getMeta
     } from "$utils/supabase.js";
 
-	let deckContainer;
-	let deck;
 	let sidebarExpanded = $state(false);
 	let obscureList = $state([]);
 	let menuUuid = $state(null);
 
     let { activeFilter, aspectRatioMap, instanceSelected, relatedImageIds, showModal = $bindable(), relatedMetadata, sootElement, tourFilter, metaData, onOpenRandom, dimensions } = $props();
+
+	// --- Pan/zoom state (plain vars — written directly to DOM for zero-latency updates) ---
+	let containerEl = $state(null);
+	let wrapperEl = $state(null);
+	let panX = 0, panY = 0, zoom = 1;
+
+	const pointers = new Map();
+	let lastPinchDist = 0;
+
+	function applyTransform() {
+		if (wrapperEl) wrapperEl.style.transform = `translate3d(${panX}px,${panY}px,0) scale(${zoom})`;
+	}
+
+	function initView() {
+		if (!containerEl || !relatedImageIds?.length || !aspectRatioMap) return;
+		const { width, height } = containerEl.getBoundingClientRect();
+		const firstId = String(relatedImageIds[0]);
+		const ar = aspectRatioMap.get(firstId)?.aspectRatio ?? 1;
+		const imgH = 1600 / ar;
+		const z = Math.min(height / imgH, width / 1600) * 0.65;
+		zoom = z;
+		panX = width / 2 - 800 * z;
+		panY = height / 2 - (imgH / 2) * z;
+		applyTransform();
+	}
+
+	$effect(() => {
+		relatedImageIds;
+		aspectRatioMap;
+		initView();
+	});
+
+	function onPointerDown(e) {
+		e.preventDefault();
+		pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		e.currentTarget.setPointerCapture(e.pointerId);
+		if (pointers.size === 2) {
+			const pts = [...pointers.values()];
+			lastPinchDist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+		}
+	}
+
+	function onPointerMove(e) {
+		if (!pointers.has(e.pointerId)) return;
+		const prev = pointers.get(e.pointerId);
+		pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+		if (pointers.size === 1) {
+			panX += e.clientX - prev.x;
+			panY += e.clientY - prev.y;
+			applyTransform();
+		} else if (pointers.size === 2) {
+			const pts = [...pointers.values()];
+			const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
+			if (lastPinchDist > 0) {
+				const newZoom = Math.max(0.05, Math.min(8, zoom * (dist / lastPinchDist)));
+				const midX = (pts[0].x + pts[1].x) / 2;
+				const midY = (pts[0].y + pts[1].y) / 2;
+				const rect = containerEl.getBoundingClientRect();
+				const cx = midX - rect.left, cy = midY - rect.top;
+				const k = newZoom / zoom;
+				panX = cx * (1 - k) + panX * k;
+				panY = cy * (1 - k) + panY * k;
+				zoom = newZoom;
+				applyTransform();
+			}
+			lastPinchDist = dist;
+		}
+	}
+
+	function onPointerUp(e) {
+		pointers.delete(e.pointerId);
+		if (pointers.size < 2) lastPinchDist = 0;
+	}
+
+	function onWheel(e) {
+		e.preventDefault();
+		const factor = Math.exp(-e.deltaY * 0.005);
+		const newZoom = Math.max(0.05, Math.min(8, zoom * factor));
+		const k = newZoom / zoom;
+		panX = e.clientX * (1 - k) + panX * k;
+		panY = e.clientY * (1 - k) + panY * k;
+		zoom = newZoom;
+		applyTransform();
+	}
+
+	$effect(() => {
+		const el = containerEl;
+		if (!el) return;
+		el.addEventListener('wheel', onWheel, { passive: false });
+		return () => el.removeEventListener('wheel', onWheel);
+	});
 
 	// Historical CPI data for inflation calculation (base year 1982-84 = 100)
 	const cpiData = {
@@ -60,101 +146,6 @@
 	}
 	
 
-	// Build layer list from current relatedImageIds + aspectRatioMap (no Deck creation here)
-	function buildLayers(imageIds, aspectMap) {
-		if (!imageIds?.length || !aspectMap) return [];
-		const size = 1600;
-		const spacing = 50;
-		const imageInfos = imageIds.map((imageId) => {
-			const imageData = aspectMap.get(String(imageId));
-			if (imageData) {
-				return { imageId, aspectRatio: imageData.aspectRatio };
-			}
-			return { imageId, aspectRatio: 1 };
-		});
-		return imageInfos.map((info, index) => {
-			const width = size;
-			const height = size / info.aspectRatio;
-			const xCenter = index * (size + spacing);
-			return new BitmapLayer({
-				id: `bitmap-${info.imageId}`,
-				image: `https://s3.us-east-1.amazonaws.com/pudding.cool/projects/menu-images/${info.imageId}.jpg`,
-				bounds: [
-					xCenter - width / 2,
-					height / 2,
-					xCenter + width / 2,
-					-height / 2
-				],
-				pickable: true,
-				parameters: { depthTest: false },
-				textureParameters: {
-					[0x2801]: 0x2601,
-					[0x2800]: 0x2601,
-					[0x2802]: 0x812f,
-					[0x2803]: 0x812f
-				},
-				onHover: () => {}
-			});
-		});
-	}
-
-	// Stable key for current image set so we only recreate Deck when menu changes, not on every re-render
-	let lastIdsKey = '';
-	$effect(() => {
-		if (!deckContainer || !relatedImageIds?.length || !aspectRatioMap) {
-			return;
-		}
-		const idsKey = relatedImageIds.slice().sort().join(',');
-		const layers = buildLayers(relatedImageIds, aspectRatioMap);
-		if (layers.length === 0) return;
-
-		const sameMenu = deck && idsKey === lastIdsKey;
-		if (sameMenu) {
-			deck.setProps({ layers });
-			return;
-		}
-
-		if (deck) {
-			deck.finalize();
-			deck = null;
-		}
-		lastIdsKey = idsKey;
-
-		deck = new Deck({
-			parent: deckContainer,
-			initialViewState: {
-				target: [0, 0, 0],
-				zoom: -3,
-				minZoom: -5,
-				maxZoom: 5,
-				rotationX: 0,
-				rotationOrbit: 0
-			},
-			controller: true,
-			views: new OrthographicView(),
-			layers
-		});
-
-		return () => {
-			if (deck) {
-				deck.finalize();
-				deck = null;
-			}
-		};
-	});
-
-	// Keep deck canvas sized to container (e.g. when sidebar toggles or window resizes)
-	$effect(() => {
-		const container = deckContainer;
-		const d = deck;
-		if (!container || !d) return;
-		const ro = new ResizeObserver(() => {
-			const { width, height } = container.getBoundingClientRect();
-			if (width && height) d.setProps({ width, height });
-		});
-		ro.observe(container);
-		return () => ro.disconnect();
-	});
 
 
 	$effect(() => {
@@ -244,7 +235,27 @@
 		</div>
 	</div>
 
-    <div class="deck-container" bind:this={deckContainer}>
+	<div
+		class="deck-container"
+		bind:this={containerEl}
+		style="cursor: grab; overflow: hidden;"
+		onpointerdown={onPointerDown}
+		onpointermove={onPointerMove}
+		onpointerup={onPointerUp}
+		onpointercancel={onPointerUp}
+	>
+		{#key relatedImageIds}
+			<div class="image-wrapper" bind:this={wrapperEl} style="transform-origin: 0 0; position: absolute; display: flex; gap: 50px; will-change: transform;">
+				{#each relatedImageIds ?? [] as imageId}
+					<img
+						src="https://s3.us-east-1.amazonaws.com/pudding.cool/projects/menu-images/{imageId}.jpg"
+						style="width: 1600px; height: auto; display: block; flex-shrink: 0;"
+						draggable="false"
+						alt=""
+					/>
+				{/each}
+			</div>
+		{/key}
 	</div>
 
 	{#if onOpenRandom}
@@ -393,22 +404,23 @@
 		
 	}
     .modal {
-        position: fixed;
+        position: absolute;
         top: 0;
         left: 0;
 		background-color: #fffef5;
-        width: 100%;
+        width: calc(100% - 50px);
         height: 100vh;
         z-index: 1000000000000;
         pointer-events: all;
+		box-shadow: 5px 0px 15px 2px rgba(0,0,0,0.37);
     }
 
     .deck-container {
         position: absolute;
-        top: 70px;
+        top: 0px;
         left: 0;
         width: 100%;
-        height: calc(100% - 70px);
+        height: 100%;
     }
 
     .close-button, .random-button {
@@ -426,6 +438,7 @@
 		-webkit-font-smoothing: antialiased;
 		padding: 15px 20px;
 		font-family: 'EB Garamond';
+		touch-action: manipulation;
     }
 
 	.random-button {

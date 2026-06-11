@@ -3,6 +3,7 @@
 	import { browser } from "$app/environment";
 	import Modal from "$components/Modal.svelte";
 	import loadCsv from "../utils/loadCsv";
+	import urlParams from "../utils/urlParams";
 	import metaData from "$data/metadata.csv";
 	import MapboxGeocoder from '@mapbox/mapbox-gl-geocoder';
 	import '@mapbox/mapbox-gl-geocoder/dist/mapbox-gl-geocoder.css';
@@ -49,7 +50,7 @@
 	let lastTouchEndTime = 0;
 	let lastMousedownTime = 0;
 	let tour = $state(true);
-	let tourMinimized = $state(false);
+	let tourMinimized = $state(browser && urlParams.get('tour') === '0');
 	let showControlsPanel = $state(false);
 
 	// Controls tuning - adjustable via GUI
@@ -172,31 +173,69 @@
 	// offsetPerZoom: nudge camera right/up per unit of zoom (e.g. {x: 0.02, y: 0.02})
 	// Dispatch synthetic arrow key events so Soot's controls handle panning with smooth damping
 	function panCanvas(direction) {
-		const keyMap = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: 'ArrowDown' };
-		const code = keyMap[direction];
-		if (!code) return;
-		const evt = new KeyboardEvent('keydown', { key: code, code, bubbles: true });
-		window.dispatchEvent(evt);
+		console.log("panning")
+		if (dimensions.width > 800) {
+			const keyMap = { left: 'ArrowLeft', right: 'ArrowRight', up: 'ArrowUp', down: 'ArrowDown' };
+			const code = keyMap[direction];
+			if (!code) return;
+			const evt = new KeyboardEvent('keydown', { key: code, code, bubbles: true });
+			window.dispatchEvent(evt);
+		} else {
+			// Mobile: Iye controls have no arrow key handler; wheel events without ctrlKey trigger pan
+			if (!controls?.domElement) return;
+			const el = controls.domElement;
+			const rect = el.getBoundingClientRect();
+			const d = 150;
+			const deltaMap = { left: [-d, 0], right: [d, 0], up: [0, -d], down: [0, d] };
+			const [deltaX, deltaY] = deltaMap[direction] ?? [0, 0];
+			const evt = new WheelEvent('wheel', {
+				deltaX,
+				deltaY,
+				deltaMode: 0,
+				clientX: rect.left + rect.width / 2,
+				clientY: rect.top + rect.height / 2,
+				bubbles: true,
+				cancelable: true
+			});
+			el.dispatchEvent(evt);
+		}
 	}
 
 	// Dispatch synthetic wheel events so Soot's controls handle zooming with smooth damping
 	function zoomCanvas(direction) {
+		console.log("zooming")
 		if (!controls?.domElement) return;
 		const el = controls.domElement;
 		const rect = el.getBoundingClientRect();
 		const pageX = rect.left + rect.width / 2;
 		const pageY = rect.top + rect.height / 2;
 		const deltaY = direction === 'in' ? -100 : 100;
-		const evt = new WheelEvent('wheel', {
-			deltaY,
-			deltaMode: 0,
-			clientX: rect.left + rect.width / 2,
-			clientY: rect.top + rect.height / 2,
-			pageX,
-			pageY,
-			bubbles: true,
-			cancelable: true
-		});
+		let evt;
+		if(dimensions.width > 800){
+			evt = new WheelEvent('wheel', {
+				deltaY,
+				deltaMode: 0,
+				clientX: rect.left + rect.width / 2,
+				clientY: rect.top + rect.height / 2,
+				pageX,
+				pageY,
+				bubbles: true,
+				cancelable: true,
+			});
+		}
+		else {
+			evt = new WheelEvent('wheel', {
+				deltaY,
+				deltaMode: 0,
+				clientX: rect.left + rect.width / 2,
+				clientY: rect.top + rect.height / 2,
+				pageX,
+				pageY,
+				bubbles: true,
+				cancelable: true,
+				ctrlKey: true
+			});
+		}
 		el.dispatchEvent(evt);
 	}
 
@@ -385,32 +424,32 @@
 		}
 	});
 
-	// Pause soot's Three.js render loop when modal is open so DeckGL isn't competing for GPU
-	$effect(() => {
-		const modalOpen = showModal;
-		const renderer = sootRenderer;
-		const renderTarget = sootRenderTarget;
-		const ctrls = controls;
+	// // Pause soot's Three.js render loop when modal is open so DeckGL isn't competing for GPU
+	// $effect(() => {
+	// 	const modalOpen = showModal;
+	// 	const renderer = sootRenderer;
+	// 	const renderTarget = sootRenderTarget;
+	// 	const ctrls = controls;
 
-		// Fallback: monkey-patch renderTarget.render to no-op when modal open (soot uses its own loop, not setAnimationLoop)
-		if (renderTarget && typeof renderTarget.render === 'function') {
-			if (modalOpen) {
-				if (!renderTarget._originalRender) {
-					renderTarget._originalRender = renderTarget.render.bind(renderTarget);
-					renderTarget.render = () => {};
-					console.log("monkey-patching renderTarget.render",renderTarget)
-				}
-				if (ctrls && 'enabled' in ctrls) ctrls.enabled = false;
-			} else {
-				if (renderTarget._originalRender) {
-					renderTarget.render = renderTarget._originalRender;
-					delete renderTarget._originalRender;
-				}
-				if (ctrls && 'enabled' in ctrls) ctrls.enabled = true;
-			}
-			return;
-		}
-	});
+	// 	// Fallback: monkey-patch renderTarget.render to no-op when modal open (soot uses its own loop, not setAnimationLoop)
+	// 	if (renderTarget && typeof renderTarget.render === 'function') {
+	// 		if (modalOpen) {
+	// 			if (!renderTarget._originalRender) {
+	// 				renderTarget._originalRender = renderTarget.render.bind(renderTarget);
+	// 				renderTarget.render = () => {};
+	// 				console.log("monkey-patching renderTarget.render",renderTarget)
+	// 			}
+	// 			if (ctrls && 'enabled' in ctrls) ctrls.enabled = false;
+	// 		} else {
+	// 			if (renderTarget._originalRender) {
+	// 				renderTarget.render = renderTarget._originalRender;
+	// 				delete renderTarget._originalRender;
+	// 			}
+	// 			if (ctrls && 'enabled' in ctrls) ctrls.enabled = true;
+	// 		}
+	// 		return;
+	// 	}
+	// });
 
 	// Initialize geocoder when container and citiesList are ready
 	$effect(() => {
@@ -1094,14 +1133,25 @@
 							controls.maxDistance = 300;
 
 							if(dimensions.width > 800) {
-								controls.smoothZoomMode = 'SCROLL_TO_ZOOM';
-								controls.dynamicDampingFactor = .4;
+								//controls.smoothZoomMode = 'SCROLL_TO_ZOOM';
+								//controls.dynamicDampingFactor = .4;
 								controls.dynamicDampingFactorWhilePanning = .9;
 								controls.dynamicDampingFactorWhileWheelPanning = .7;
-								controls.panSpeed = .3;
+								//controls.panSpeed = .3;
 								controls.scrollToZoomSpeed = 0.00040;
 								controls.zoomSpeed = 2;
-								controls.staticMoving = false;
+								//controls.staticMoving = false;
+
+								//from claude
+								controls.smoothZoomMode = 'SCROLL_TO_ZOOM';   // scroll = zoom, not pan (most important)
+								controls.scrollToZoomSpeed = 0.00035;          // responsive but not jumpy
+								controls.zoomSpeed = 1.8;
+								controls.panSpeed = 1.0;                       // 1:1 drag feel
+								controls.dynamicDampingFactor = 0.25;          // subtle coast on zoom
+								controls.dynamicDampingFactorWhilePanning = 0.2; // gentle pan inertia (Google Maps has this)
+								controls.dynamicDampingFactorWhileWheelPanning = 0.6;
+
+
 							}
 							// Tuning params applied via $effect from controlSettings
 						}
@@ -1436,7 +1486,7 @@
 				<div class="loading-carousel">
 					<img 
 					class="loading-menu-image"
-					src="assets/loading.webp"
+					src="assets/loading.jpg"
 					alt="Loading menu"
 					transition:fade={{duration: 300}}
 					/>
@@ -1452,11 +1502,8 @@
 		</div>
 	{/if}
 
-	<div class="modal-container {showModal ? 'show-modal' : 'hide-modal'}">
-		<Modal bind:showModal {instanceSelected} relatedMetadata={relatedImageIds[1]} relatedImageIds={relatedImageIds[0]} {sootElement} {aspectRatioMap} {activeFilter} {tourFilter} {metaData} onOpenRandom={openRandomModal} {dimensions} />
-	</div>
 
-	<div id="soot-publication" class="{showModal ? 'soot-publication-hide' : 'soot-publication-show'}">
+	<div id="soot-publication" class:modal-open={showModal}>
 	
 
 	
@@ -1466,245 +1513,251 @@
 	>
 		<div slot="overlay-container">
 		</div>
-	
+		<div slot="viewslist">
+			<Header />
 
-			<div slot="viewslist">
-				<Header />
+			{#if tour && loaded}
 
-				{#if tour && loaded}
+			
 
-				
-
-					<div 
-						class="tour-container {tourMinimized ? 'minimized' : ''}"
-						onclick={() => { if (tourMinimized) tourMinimized = false; }}
-						role="button"
-						tabindex="0"
-						onkeydown={(e) => { if (tourMinimized && (e.key === 'Enter' || e.key === ' ')) tourMinimized = false; }}
-					>
-						{#key tourStep}
-							<div class="tour-content" in:fade={{duration: 600}}>
-								{#each tourText[tourStep].content as paragraph}
-									<p>{@html paragraph.value}</p>
-								{/each}
-							</div>
-						{/key}
-						<div class="tour-buttons">
-							{#if tourStep > 0}
-								<button class="tour-button tour-button-back" onclick={() => tourStep--}>
-									<div class="tour-arrow-left">
-										<div style="transform: rotate(180deg);">
-											{@html arrowRight}
-										</div>
-										<!-- <ChevronLeft size="30" strokeWidth="1.7" color="#000" /> -->
-									</div>
-									<!-- {tourText[tourStep - 1].section} -->
-								</button>
-							{/if}
-							{#if tourStep < tourText.length - 1}
-								<button class="tour-button" style="text-align: right; margin-inline-start: auto;" onclick={() => tourStep++}>
-									{tourText[tourStep].section}
-									<div class="tour-arrow-right">
-										{@html arrowRight}
-										<!-- <ChevronRight size="30" strokeWidth="1.7" color="#000" /> -->
-									</div>	
-								</button>
-							{/if}
-							{#if tourStep == tourText.length - 1}
-								<button class="tour-button" style="margin-inline-start: auto;" onclick={(e) => { e.stopPropagation(); tourMinimized = true; }}>
-									Got it!
-								</button>
-							{/if}
-						</div>
-						{#if tourMinimized}
-							<div class="tour-tab">Show Guide
-								<span style="
-									transform: rotate(-90deg);
-									display: block;
-									width: 18px;
-									margin-left: 10px;
-								">
-									{@html arrowRight}
-								</span>
-							</div>
-						{/if}
-					</div>
-				{/if}
-
-				{#if loaded}
-					<div class="pan-zoom-buttons">
-						<div class="pan-buttons">
-							<div class="pan-row pan-row-top">
-								<button class="pan-btn" onclick={() => panCanvas('up')} title="Pan up">
-									<div style="transform: rotate(-90deg);">
-										{@html arrowRight}
-									</div>
-								</button>
-							</div>
-							<div class="pan-row">
-								<button class="pan-btn" onclick={() => panCanvas('left')} title="Pan left">
-									<div style="transform: rotate(180deg);">
-										{@html arrowRight}
-									</div>
-								</button>
-								<button class="pan-btn" onclick={() => panCanvas('down')} title="Pan down">
-									<div style="transform: rotate(90deg);">
-										{@html arrowRight}
-									</div>
-								</button>
-								<button class="pan-btn" onclick={() => panCanvas('right')} title="Pan right">
-									<div style="transform: rotate(0deg);">
-										{@html arrowRight}
-									</div>
-								</button>
-							</div>
-						</div>
-						<div class="zoom-buttons">
-							<button class="pan-btn" onclick={() => zoomCanvas('in')} title="Zoom in">
-								{@html plus}
-							</button>
-							<button class="pan-btn" onclick={() => zoomCanvas('out')} title="Zoom out">
-								{@html minus}
-							</button>
-						</div>
-					</div>
-				{/if}
-					<!-- Category Labels Overlay -->
-				{#if labelsVisible && screenLabels.length > 0}
-					{#key savedLayout}
-						<div class="labels-overlay" transition:fade={{duration: 1000}}>
-							{#each screenLabels as label (label.tagId)}
-								{@const decodedLabel = decodeURIComponent(label.label)}
-								{#if label.screenPos?.visible}
-									<div
-										class="category-label"
-										style="
-											left: {Math.round(label.screenPos.x)}px;
-											top: {Math.round(label.screenPos.y)}px;
-										"
-									>
-										<span class="label-text">{getLabelContent(decodedLabel)}</span>
-									</div>
-								{/if}
+				<div 
+					class="tour-container {tourMinimized ? 'minimized' : ''}"
+					onclick={() => { if (tourMinimized) tourMinimized = false; }}
+					role="button"
+					tabindex="0"
+					onkeydown={(e) => { if (tourMinimized && (e.key === 'Enter' || e.key === ' ')) tourMinimized = false; }}
+				>
+					{#key tourStep}
+						<div class="tour-content" in:fade={{duration: 600}}>
+							{#each tourText[tourStep].content as paragraph}
+								<p>{@html paragraph.value}</p>
 							{/each}
 						</div>
 					{/key}
-				{/if}
-				<!-- <button style="position:fixed; z-index: 10000000;" on:click={() => {
-					showModal = false;
-					sootElement?.expose?.deselectInstance();
-				}}>
-					Close focus view
-				</button> -->
-			
-				<!-- <button style="top: 0; position:fixed; z-index: 10000000;" class="modal-button" on:click={showModal = true}>Show Modal</button> -->
-				<!-- Controls tuning panel -->
-				{#if loaded}
-					<div class="controls-area">
-						<div class="title-text">5,000 menus from 1880-1920</div>
-						<button 
-							class="controls-panel-toggle"
-							onclick={() => showControlsPanel = !showControlsPanel}
-							title="Pan/zoom settings"
-						>
-							{showControlsPanel ? '▼' : '⚙'}
-						</button>
-						{#if showControlsPanel}
-							<div class="controls-panel">
-							<h4>Pan/Zoom Tuning</h4>
-							<label class="toggle-row">
-								<span>staticMoving (instant)</span>
-								<button 
-									class="toggle-btn {controlSettings.staticMoving ? 'on' : 'off'}"
-									onclick={() => controlSettings.staticMoving = !controlSettings.staticMoving}
-								>
-									{controlSettings.staticMoving ? 'ON' : 'OFF'}
-								</button>
-							</label>
-							<label>
-								dynamicDampingFactor: {controlSettings.dynamicDampingFactor.toFixed(2)}
-								<input type="range" min="0" max="1" step="0.05" value={controlSettings.dynamicDampingFactor} oninput={(e) => controlSettings.dynamicDampingFactor = parseFloat(e.target.value)} />
-							</label>
-							<label>
-								dynamicDampingFactorWhilePanning: {controlSettings.dynamicDampingFactorWhilePanning.toFixed(2)}
-								<input type="range" min="0" max="1" step="0.05" value={controlSettings.dynamicDampingFactorWhilePanning} oninput={(e) => controlSettings.dynamicDampingFactorWhilePanning = parseFloat(e.target.value)} />
-							</label>
-							<label>
-								dynamicDampingFactorWhileWheelPanning: {controlSettings.dynamicDampingFactorWhileWheelPanning.toFixed(2)}
-								<input type="range" min="0" max="1" step="0.05" value={controlSettings.dynamicDampingFactorWhileWheelPanning} oninput={(e) => controlSettings.dynamicDampingFactorWhileWheelPanning = parseFloat(e.target.value)} />
-							</label>
-							<label>
-								panSpeed: {controlSettings.panSpeed.toFixed(2)}
-								<input type="range" min="0.1" max="2" step="0.05" value={controlSettings.panSpeed} oninput={(e) => controlSettings.panSpeed = parseFloat(e.target.value)} />
-							</label>
-							<label>
-								scrollToZoomSpeed: {controlSettings.scrollToZoomSpeed.toFixed(5)}
-								<input type="range" min="0.00005" max="0.001" step="0.00005" value={controlSettings.scrollToZoomSpeed} oninput={(e) => controlSettings.scrollToZoomSpeed = parseFloat(e.target.value)} />
-							</label>
-							<label>
-								zoomSpeed: {controlSettings.zoomSpeed.toFixed(2)}
-								<input type="range" min="0.5" max="5" step="0.1" value={controlSettings.zoomSpeed} oninput={(e) => controlSettings.zoomSpeed = parseFloat(e.target.value)} />
-							</label>
-							<button class="controls-reset" onclick={() => {
-								controlSettings = {
-									staticMoving: true,
-									dynamicDampingFactor: 0.45,
-									dynamicDampingFactorWhilePanning: 0.4,
-									dynamicDampingFactorWhileWheelPanning: 0.7,
-									panSpeed: 0.4,
-									scrollToZoomSpeed: 0.00025,
-									zoomSpeed: 2.4
-								};
-							}}>Reset</button>
-							</div>
+					<div class="tour-buttons">
+						{#if tourStep > 0}
+							<button class="tour-button tour-button-back" onclick={() => tourStep--}>
+								<div class="tour-arrow-left">
+									<div style="transform: rotate(180deg);">
+										{@html arrowRight}
+									</div>
+									<!-- <ChevronLeft size="30" strokeWidth="1.7" color="#000" /> -->
+								</div>
+								<!-- {tourText[tourStep - 1].section} -->
+							</button>
+						{/if}
+						{#if tourStep < tourText.length - 1}
+							<button class="tour-button" style="text-align: right; margin-inline-start: auto;" onclick={() => tourStep++}>
+								{tourText[tourStep].section}
+								<div class="tour-arrow-right">
+									{@html arrowRight}
+									<!-- <ChevronRight size="30" strokeWidth="1.7" color="#000" /> -->
+								</div>	
+							</button>
+						{/if}
+						{#if tourStep == tourText.length - 1}
+							<button class="tour-button" style="margin-inline-start: auto;" onclick={(e) => { e.stopPropagation(); tourMinimized = true; }}>
+								Got it!
+							</button>
 						{/if}
 					</div>
-				{/if}
-
-				<div class="geocoder-container" style="visibility: {tourMinimized ? 'visible' : 'hidden'};" bind:this={geocoderContainer}>
-					{#if citiesList}
-						<div class="filter-container">
-							{#if activeFilter}
-								<!-- Show active filter with X button -->
-								<button class="filter-button active-filter" onclick={clearFilter}>
-									{decodeURIComponent(activeFilter)} <span class="clear-x">×</span>
-								</button>
-							{:else}
-								<!-- Showfind all filter buttons -->
-								{#each highlightedGeographies as city}
-										<button class="filter-button"
-											onclick={() => {
-												searchClickedType = "geography_city";
-												filtergeoCoderLocation(city);
-											}}
-										>
-											{getCity(city)}
-										</button>
-								{/each}
-								<div class="divider"></div>
-								<button style="" class="filter-button fancy-button" onclick={() => changeFilterByIndex(1)}>U.S. States</button>
-								<button style="" class="filter-button fancy-button" onclick={() => changeFilterByIndex(2)}>Menu Setting</button>
-
-								<!-- <button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => animalFilter('pretentious')}>Pretentious</button>
-								<button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => animalFilter('casual')}>Casual</button> -->
-								<button style="" class="filter-button fancy-button" onclick={() => restFilter('plaza')}>Plaza Hotel</button>
-								<button style="" class="filter-button fancy-button" onclick={() => restFilter('waldorf')}>Waldorf-Astoria</button>
-								<button style="" class="filter-button fancy-button" onclick={() => restFilter('delmonicos')}>Delmonico's</button>
-								<div class="divider"></div>
-								<!-- <button style="background: #32641d;" class="filter-button fancy-button" onclick={() => animalFilter('obscure')}>Obscure Dishes</button> -->
-								<button style="" class="filter-button mobile-hide fancy-button" onclick={() => rareFilter('rare')}>Uncommon Meats</button>
-								<button style="" class="filter-button mobile-hide fancy-button" onclick={() => animalFilter('squirrel')}><Squirrel size="20" strokeWidth="1.5" color="#000"/></button>
-								<button style="" class="filter-button mobile-hide fancy-button" onclick={() => animalFilter('turtle')}><Turtle size="20" strokeWidth="1.5" color="#000"/></button>
-								<button style="" class="filter-button mobile-hide fancy-button" onclick={() => animalFilter('birdie')}><Bird size="20" strokeWidth="1.5" color="#000"/></button>
-							{/if}
-
+					{#if tourMinimized}
+						<div class="tour-tab">Show Guide
+							<span style="
+								transform: rotate(-90deg);
+								display: block;
+								width: 18px;
+								margin-left: 10px;
+							">
+								{@html arrowRight}
+							</span>
 						</div>
 					{/if}
 				</div>
-			</div>
-			<div slot="focusview">
+			{/if}
 
-			</div>	  
+			{#if loaded}
+				<div class="pan-zoom-buttons">
+					<div class="pan-buttons">
+						<div class="pan-row pan-row-top">
+							<button class="pan-btn" onclick={() => panCanvas('up')} title="Pan up">
+								<div style="transform: rotate(-90deg);">
+									{@html arrowRight}
+								</div>
+							</button>
+						</div>
+						<div class="pan-row">
+							<button class="pan-btn" onclick={() => panCanvas('left')} title="Pan left">
+								<div style="transform: rotate(180deg);">
+									{@html arrowRight}
+								</div>
+							</button>
+							<button class="pan-btn" onclick={() => panCanvas('down')} title="Pan down">
+								<div style="transform: rotate(90deg);">
+									{@html arrowRight}
+								</div>
+							</button>
+							<button class="pan-btn" onclick={() => panCanvas('right')} title="Pan right">
+								<div style="transform: rotate(0deg);">
+									{@html arrowRight}
+								</div>
+							</button>
+						</div>
+					</div>
+					<div class="zoom-buttons">
+						<button class="pan-btn" onclick={() => zoomCanvas('in')} title="Zoom in">
+							{@html plus}
+						</button>
+						<button class="pan-btn" onclick={() => zoomCanvas('out')} title="Zoom out">
+							{@html minus}
+						</button>
+					</div>
+				</div>
+			{/if}
+				<!-- Category Labels Overlay -->
+			{#if labelsVisible && screenLabels.length > 0}
+				{#key savedLayout}
+					<div class="labels-overlay" transition:fade={{duration: 1000}}>
+						{#each screenLabels as label (label.tagId)}
+							{@const decodedLabel = decodeURIComponent(label.label)}
+							{#if label.screenPos?.visible}
+								<div
+									class="category-label"
+									style="
+										left: {Math.round(label.screenPos.x)}px;
+										top: {Math.round(label.screenPos.y)}px;
+									"
+								>
+									<span class="label-text">{getLabelContent(decodedLabel)}</span>
+								</div>
+							{/if}
+						{/each}
+					</div>
+				{/key}
+			{/if}
+			<!-- <button style="position:fixed; z-index: 10000000;" on:click={() => {
+				showModal = false;
+				sootElement?.expose?.deselectInstance();
+			}}>
+				Close focus view
+			</button> -->
+		
+			<!-- <button style="top: 0; position:fixed; z-index: 10000000;" class="modal-button" on:click={showModal = true}>Show Modal</button> -->
+			<!-- Controls tuning panel -->
+			{#if loaded}
+				<div class="controls-area">
+					<div class="title-text">5,000 menus from 1880-1920</div>
+					<button 
+						class="controls-panel-toggle"
+						onclick={() => showControlsPanel = !showControlsPanel}
+						title="Pan/zoom settings"
+					>
+						{showControlsPanel ? '▼' : '⚙'}
+					</button>
+					{#if showControlsPanel}
+						<div class="controls-panel">
+						<h4>Pan/Zoom Tuning</h4>
+						<label class="toggle-row">
+							<span>staticMoving (instant)</span>
+							<button 
+								class="toggle-btn {controlSettings.staticMoving ? 'on' : 'off'}"
+								onclick={() => controlSettings.staticMoving = !controlSettings.staticMoving}
+							>
+								{controlSettings.staticMoving ? 'ON' : 'OFF'}
+							</button>
+						</label>
+						<label>
+							dynamicDampingFactor: {controlSettings.dynamicDampingFactor.toFixed(2)}
+							<input type="range" min="0" max="1" step="0.05" value={controlSettings.dynamicDampingFactor} oninput={(e) => controlSettings.dynamicDampingFactor = parseFloat(e.target.value)} />
+						</label>
+						<label>
+							dynamicDampingFactorWhilePanning: {controlSettings.dynamicDampingFactorWhilePanning.toFixed(2)}
+							<input type="range" min="0" max="1" step="0.05" value={controlSettings.dynamicDampingFactorWhilePanning} oninput={(e) => controlSettings.dynamicDampingFactorWhilePanning = parseFloat(e.target.value)} />
+						</label>
+						<label>
+							dynamicDampingFactorWhileWheelPanning: {controlSettings.dynamicDampingFactorWhileWheelPanning.toFixed(2)}
+							<input type="range" min="0" max="1" step="0.05" value={controlSettings.dynamicDampingFactorWhileWheelPanning} oninput={(e) => controlSettings.dynamicDampingFactorWhileWheelPanning = parseFloat(e.target.value)} />
+						</label>
+						<label>
+							panSpeed: {controlSettings.panSpeed.toFixed(2)}
+							<input type="range" min="0.1" max="2" step="0.05" value={controlSettings.panSpeed} oninput={(e) => controlSettings.panSpeed = parseFloat(e.target.value)} />
+						</label>
+						<label>
+							scrollToZoomSpeed: {controlSettings.scrollToZoomSpeed.toFixed(5)}
+							<input type="range" min="0.00005" max="0.001" step="0.00005" value={controlSettings.scrollToZoomSpeed} oninput={(e) => controlSettings.scrollToZoomSpeed = parseFloat(e.target.value)} />
+						</label>
+						<label>
+							zoomSpeed: {controlSettings.zoomSpeed.toFixed(2)}
+							<input type="range" min="0.5" max="5" step="0.1" value={controlSettings.zoomSpeed} oninput={(e) => controlSettings.zoomSpeed = parseFloat(e.target.value)} />
+						</label>
+						<button class="controls-reset" onclick={() => {
+							controlSettings = {
+								staticMoving: true,
+								dynamicDampingFactor: 0.45,
+								dynamicDampingFactorWhilePanning: 0.4,
+								dynamicDampingFactorWhileWheelPanning: 0.7,
+								panSpeed: 0.4,
+								scrollToZoomSpeed: 0.00025,
+								zoomSpeed: 2.4
+							};
+						}}>Reset</button>
+						</div>
+					{/if}
+				</div>
+			{/if}
+
+			<div class="geocoder-container" style="visibility: {tourMinimized ? 'visible' : 'hidden'};" bind:this={geocoderContainer}>
+				{#if citiesList}
+					<div class="filter-container">
+						{#if activeFilter}
+							<!-- Show active filter with X button -->
+							<button class="filter-button active-filter" onclick={clearFilter}>
+								{decodeURIComponent(activeFilter)} <span class="clear-x">×</span>
+							</button>
+						{:else}
+							<!-- Showfind all filter buttons -->
+							{#each highlightedGeographies as city}
+									<button class="filter-button"
+										onclick={() => {
+											searchClickedType = "geography_city";
+											filtergeoCoderLocation(city);
+										}}
+									>
+										{getCity(city)}
+									</button>
+							{/each}
+							<div class="divider"></div>
+							<button style="" class="filter-button fancy-button" onclick={() => changeFilterByIndex(1)}>U.S. States</button>
+							<button style="" class="filter-button fancy-button" onclick={() => changeFilterByIndex(2)}>Menu Setting</button>
+
+							<!-- <button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => animalFilter('pretentious')}>Pretentious</button>
+							<button style="background: #1d3d64;" class="filter-button fancy-button" onclick={() => animalFilter('casual')}>Casual</button> -->
+							<button style="" class="filter-button fancy-button" onclick={() => restFilter('plaza')}>Plaza Hotel</button>
+							<button style="" class="filter-button fancy-button" onclick={() => restFilter('waldorf')}>Waldorf-Astoria</button>
+							<button style="" class="filter-button fancy-button" onclick={() => restFilter('delmonicos')}>Delmonico's</button>
+							<div class="divider"></div>
+							<!-- <button style="background: #32641d;" class="filter-button fancy-button" onclick={() => animalFilter('obscure')}>Obscure Dishes</button> -->
+							<button style="" class="filter-button mobile-hide fancy-button" onclick={() => rareFilter('rare')}>Uncommon Meats</button>
+							<button style="" class="filter-button mobile-hide fancy-button" onclick={() => animalFilter('squirrel')}><Squirrel size="20" strokeWidth="1.5" color="#000"/></button>
+							<button style="" class="filter-button mobile-hide fancy-button" onclick={() => animalFilter('turtle')}><Turtle size="20" strokeWidth="1.5" color="#000"/></button>
+							<button style="" class="filter-button mobile-hide fancy-button" onclick={() => animalFilter('birdie')}><Bird size="20" strokeWidth="1.5" color="#000"/></button>
+							<a class="menu-story" href="https://pudding.cool/2026/06/menu-story" target="_blank">
+								{#if dimensions.width > 450}
+								<p><b>Read our Detailed Guide:</b> a History of Menus is a Menu of History »</p>
+								{:else}
+									<p>Read More »</p>
+								{/if}
+							</a>
+						{/if}
+					</div>
+				{/if}
+			</div>
+		</div>
+		<div slot="focusview">
+			<div class="modal-container">
+				<Modal bind:showModal {instanceSelected} relatedMetadata={relatedImageIds[1]} relatedImageIds={relatedImageIds[0]} {sootElement} {aspectRatioMap} {activeFilter} {tourFilter} {metaData} onOpenRandom={openRandomModal} {dimensions} />
+			</div>
+		</div>	  
 	</soot-publication>
 </div>
 </svelte:boundary>
@@ -2090,8 +2143,8 @@
 	   fires, and soot re-initializes/refetches (many GETs to static.soot.com) → ERR_INSUFFICIENT_RESOURCES.
 	   Keeping dimensions with visibility + pointer-events avoids that. */
 	.soot-publication-hide {
-		visibility: hidden;
-		pointer-events: none;
+		/* visibility: hidden; */
+		/* pointer-events: none; */
 		/* content-visibility: hidden; */
 		/* opacity: 0; */
 		/* transform: translate3d(-9999px, -9999px, 0); */
@@ -2101,24 +2154,19 @@
 	.hide {
 		display: none;
 	}
-	.hide-modal {
-		/* visibility: hidden; */
-	}
-
-	:global(.hide-modal .random-button) {
-		display: none;
-	}
 	.modal-container {
-		transform: translate(-100%,0);
-		transition: transform .2s ease-in-out;
-		transition-delay: .0s;		
-		position: relative;
-    	z-index: 10000000;
-
+		position: fixed;
+		z-index: 100000000000000;
+		width: 100vw;
+		height: 100vh;
+		background-color: rgba(0,0,0,0.5);
+		top: 0;
+		visibility: hidden;
+		pointer-events: none;
 	}
-	.modal-container.show-modal {
-		/* visibility: visible; */
-		transform: translate(0,0);
+	#soot-publication.modal-open :global(.modal-container) {
+		visibility: visible;
+		pointer-events: all;
 	}
 
 	/* Loading state */
@@ -2147,11 +2195,10 @@
 	}
 
 	.loading-container p {
-		font-family: 'Atlas Grotesk', monospace;
-		font-size: 18px;
+		font-family: 'EB Garamond', monospace;
+		font-size: 24px;
 		font-weight: 600;
 		color: black;
-		text-transform: uppercase;
 		letter-spacing: 0.02em;
 	}
 	
@@ -2170,6 +2217,23 @@
 		/* object-fit: contain; */
 		/* box-shadow: 0 4px 24px rgba(0, 0, 0, 0.12); */
 	}
+	.menu-story p {
+		margin: 0;
+		font-family: 'Atlas Grotesk';
+		line-height: 1.3;
+	}
+
+	.menu-story b {
+		-webkit-font-smoothing: antialiased;
+	}
+
+	.menu-story {
+		text-decoration-color: #a59898;
+    	text-decoration-thickness: 1px;
+	    font-size: 14px;
+		margin-top: 10px;
+	}
+
 
 	/* Category Labels Overlay */
 	.labels-overlay {
@@ -2257,6 +2321,16 @@
 	}
 
 	@media (max-width: 450px) {
+		.menu-story {
+			background: black;
+			margin: 0;
+			text-decoration: none;
+        	color: white;
+        	padding: 0px 10px;
+		}
+		.menu-story p {
+			line-height: 1.7;
+		}
 		.mobile-hide {
 			display: none;
 		}
@@ -2329,6 +2403,5 @@
 		:global(.mapboxgl-ctrl-geocoder--button) {
 			background: none;
 		}
-
 	}
 </style>
