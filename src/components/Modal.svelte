@@ -16,9 +16,6 @@
 	let wrapperEl = $state(null);
 	let panX = 0, panY = 0, zoom = 1;
 
-	const pointers = new Map();
-	let lastPinchDist = 0;
-
 	function applyTransform() {
 		if (wrapperEl) wrapperEl.style.transform = `translate3d(${panX}px,${panY}px,0) scale(${zoom})`;
 	}
@@ -29,7 +26,8 @@
 		const firstId = String(relatedImageIds[0]);
 		const ar = aspectRatioMap.get(firstId)?.aspectRatio ?? 1;
 		const imgH = 1600 / ar;
-		const z = Math.min(height / imgH, width / 1600) * 0.65;
+		const fitFactor = dimensions.width < 450 ? 0.9 : 0.65;
+		const z = Math.min(height / imgH, width / 1600) * fitFactor;
 		zoom = z;
 		panX = width / 2 - 800 * z;
 		panY = height / 2 - (imgH / 2) * z;
@@ -42,64 +40,112 @@
 		initView();
 	});
 
+	// Desktop: mouse drag + wheel zoom via pointer events
+	const pointers = new Map();
+	let ptrPinchDist = 0;
+
 	function onPointerDown(e) {
-		e.preventDefault();
+		if (e.pointerType === 'touch') return; // handled by touch events below
 		pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
 		e.currentTarget.setPointerCapture(e.pointerId);
-		if (pointers.size === 2) {
-			const pts = [...pointers.values()];
-			lastPinchDist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
-		}
 	}
 
 	function onPointerMove(e) {
+		if (e.pointerType === 'touch') return;
 		if (!pointers.has(e.pointerId)) return;
 		const prev = pointers.get(e.pointerId);
 		pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-		if (pointers.size === 1) {
-			panX += e.clientX - prev.x;
-			panY += e.clientY - prev.y;
-			applyTransform();
-		} else if (pointers.size === 2) {
-			const pts = [...pointers.values()];
-			const dist = Math.hypot(pts[1].x - pts[0].x, pts[1].y - pts[0].y);
-			if (lastPinchDist > 0) {
-				const newZoom = Math.max(0.05, Math.min(8, zoom * (dist / lastPinchDist)));
-				const midX = (pts[0].x + pts[1].x) / 2;
-				const midY = (pts[0].y + pts[1].y) / 2;
-				const rect = containerEl.getBoundingClientRect();
-				const cx = midX - rect.left, cy = midY - rect.top;
-				const k = newZoom / zoom;
-				panX = cx * (1 - k) + panX * k;
-				panY = cy * (1 - k) + panY * k;
-				zoom = newZoom;
-				applyTransform();
-			}
-			lastPinchDist = dist;
-		}
-	}
-
-	function onPointerUp(e) {
-		pointers.delete(e.pointerId);
-		if (pointers.size < 2) lastPinchDist = 0;
-	}
-
-	function onWheel(e) {
-		e.preventDefault();
-		const factor = Math.exp(-e.deltaY * 0.005);
-		const newZoom = Math.max(0.05, Math.min(8, zoom * factor));
-		const k = newZoom / zoom;
-		panX = e.clientX * (1 - k) + panX * k;
-		panY = e.clientY * (1 - k) + panY * k;
-		zoom = newZoom;
+		panX += e.clientX - prev.x;
+		panY += e.clientY - prev.y;
 		applyTransform();
 	}
 
+	function onPointerUp(e) {
+		if (e.pointerType === 'touch') return;
+		pointers.delete(e.pointerId);
+	}
+
+	// Mobile: touch events registered with passive:false so preventDefault() works,
+	// preventing the document-level touchmove listener from firing pointercancel.
 	$effect(() => {
 		const el = containerEl;
 		if (!el) return;
+
+		let touchPinchDist = 0;
+		let prevTouches = new Map();
+
+		function onTouchStart(e) {
+			e.preventDefault();
+			for (const t of e.changedTouches) {
+				prevTouches.set(t.identifier, { x: t.clientX, y: t.clientY });
+			}
+			if (e.touches.length === 2) {
+				touchPinchDist = Math.hypot(
+					e.touches[1].clientX - e.touches[0].clientX,
+					e.touches[1].clientY - e.touches[0].clientY
+				);
+			}
+		}
+
+		function onTouchMove(e) {
+			e.preventDefault();
+			if (e.touches.length === 1) {
+				const t = e.touches[0];
+				const prev = prevTouches.get(t.identifier);
+				if (prev) {
+					panX += t.clientX - prev.x;
+					panY += t.clientY - prev.y;
+					applyTransform();
+				}
+				prevTouches.set(t.identifier, { x: t.clientX, y: t.clientY });
+			} else if (e.touches.length === 2) {
+				const t1 = e.touches[0], t2 = e.touches[1];
+				const dist = Math.hypot(t2.clientX - t1.clientX, t2.clientY - t1.clientY);
+				if (touchPinchDist > 0) {
+					const newZoom = Math.max(0.05, Math.min(8, zoom * (dist / touchPinchDist)));
+					const midX = (t1.clientX + t2.clientX) / 2;
+					const midY = (t1.clientY + t2.clientY) / 2;
+					const rect = el.getBoundingClientRect();
+					const k = newZoom / zoom;
+					panX = (midX - rect.left) * (1 - k) + panX * k;
+					panY = (midY - rect.top) * (1 - k) + panY * k;
+					zoom = newZoom;
+					applyTransform();
+				}
+				touchPinchDist = dist;
+				for (const t of e.touches) {
+					prevTouches.set(t.identifier, { x: t.clientX, y: t.clientY });
+				}
+			}
+		}
+
+		function onTouchEnd(e) {
+			for (const t of e.changedTouches) prevTouches.delete(t.identifier);
+			if (e.touches.length < 2) touchPinchDist = 0;
+		}
+
+		function onWheel(e) {
+			e.preventDefault();
+			const factor = Math.exp(-e.deltaY * 0.005);
+			const newZoom = Math.max(0.05, Math.min(8, zoom * factor));
+			const k = newZoom / zoom;
+			panX = e.clientX * (1 - k) + panX * k;
+			panY = e.clientY * (1 - k) + panY * k;
+			zoom = newZoom;
+			applyTransform();
+		}
+
+		el.addEventListener('touchstart', onTouchStart, { passive: false });
+		el.addEventListener('touchmove', onTouchMove, { passive: false });
+		el.addEventListener('touchend', onTouchEnd, { passive: false });
 		el.addEventListener('wheel', onWheel, { passive: false });
-		return () => el.removeEventListener('wheel', onWheel);
+
+		return () => {
+			el.removeEventListener('touchstart', onTouchStart);
+			el.removeEventListener('touchmove', onTouchMove);
+			el.removeEventListener('touchend', onTouchEnd);
+			el.removeEventListener('wheel', onWheel);
+		};
 	});
 
 	// Historical CPI data for inflation calculation (base year 1982-84 = 100)
@@ -199,18 +245,16 @@
 					<span class="">{decodeURIComponent(relatedMetadata?.geography_city)}</span>
 				</p>
 			{/if}
-			{#if menuUuid}
-				<a href="https://digitalcollections.nypl.org/items/{menuUuid}" target="_blank">
-					<p class="menu-uuid">Link to NYPL Menu</p>
-				</a>
-			{/if}
+
 			{#if inflationValue && relatedMetadata?.year}
 				<div class="inflation-calc">
 					<span class="dollar">$1</span> in {relatedMetadata.year} ≈ <span class="dollar">${inflationValue}</span> today
 				</div>
 			{/if}
 		</div>
+		
 		<div class="sidebar" class:expanded={sidebarExpanded}>
+		
 			<p class="sidebar-title" style="font-weight: 600; font-size: 1.1em; padding-bottom: 0px;">Dish Definitions</p>
 			{#if obscureList}
 				{#each obscureList[0]?.obscure_dishes as obscure}
@@ -232,6 +276,11 @@
 					{/if}
 				</span>
 			</div>
+			{#if menuUuid}
+				<a class="nypl-link" href="https://digitalcollections.nypl.org/items/{menuUuid}" target="_blank">
+					<p class="menu-uuid">Link to NYPL Menu</p>
+				</a>
+			{/if}
 		</div>
 	</div>
 
@@ -487,6 +536,7 @@
 			padding-bottom: 5px;
 			padding-left: 5px;
 			padding-right: 5px;
+			padding-top: 5px;
 		}
 		.year {
 			margin-top: 0px;
@@ -527,7 +577,7 @@
 			font-size: 11px;
 			padding: 5px 0px;
 			background: #fff;
-			width: 200px;
+			width: 100%;
 		}
 		.sidebar p {
 			font-size: 11px;
@@ -542,13 +592,19 @@
 		.random-button {
 			top: 0;
 			left: 5px;
-			transform: translate(0, 67px);
+			transform: translate(0, 57px);
 			right: auto;
 			font-size: 15px;
 			width: 97px;
 			padding: 0px 5px;
 			line-height: 1.1;
 		}
+	}
+
+	.menu-uuid {
+		margin: 0;
+		margin-top: 10px;
+		pointer-events: all;
 	}
 
 </style>

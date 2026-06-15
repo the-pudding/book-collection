@@ -108,3 +108,13 @@ svg {
 	font-style: italic;
 	color: #000;
 }
+
+.Root {
+	position: fixed;
+}
+
+#soot-publication {
+	position: fixed;
+	height: 100vh;
+	width: 100vw;
+}
