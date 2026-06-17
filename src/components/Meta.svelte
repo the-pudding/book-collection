@@ -2,8 +2,8 @@
 	let {
 		title = "Title TK",
 		description = "Description TK",
-		url = "https://pudding.cool",
-		keywords = "",
+		url = "https://pudding.cool/2026/06/menu-collection",
+		keywords = "menus, restaurants, data visualization",
 		preloadFont = []
 	} = $props();
 </script>
@@ -16,30 +16,30 @@
 
 	<meta property="og:title" content={title} />
 	<meta property="og:site_name" content="The Pudding" />
-	<meta property="og:url" content={url} />
+	<meta property="og:url" content="https://pudding.cool/2026/06/menu-collection" />
 	<meta property="og:description" content={description} />
 	<meta property="og:type" content="article" />
 	<meta property="og:locale" content="en_US" />
 
-	<meta property="og:image" content="{url}/assets/social-facebook.jpg" />
+	<meta property="og:image" content="https://pudding.cool/2026/06/menu-collection/assets/social-facebook.jpg" />
 	<meta property="og:image:type" content="image/jpeg" />
 	<meta property="og:image:width" content="1200" />
-	<meta property="og:image:height" content="628" />
+	<meta property="og:image:height" content="630" />
 
 	<meta name="twitter:card" content="summary_large_image" />
 	<meta name="twitter:site" content="https://pudding.cool" />
 	<meta name="twitter:creator" content="@puddingviz" />
 	<meta name="twitter:title" content={title} />
 	<meta name="twitter:description" content={description} />
-	<meta name="twitter:image:src" content="{url}/assets/social-twitter.jpg" />
+	<meta name="twitter:image:src" content="https://pudding.cool/2026/06/menu-collection/assets/social-facebook.jpg" />
 
 	<meta name="robots" content="max-image-preview:large" />
 
-	<link rel="canonical" href="{url}/" />
+	<link rel="canonical" href="https://pudding.cool/2026/06/menu-collection/" />
 
 	<link rel="preconnect" href="https://fonts.googleapis.com">
 	<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin="">
-	<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital@0;1&amp;display=swap" rel="stylesheet">
+	<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400..800;1,400..800&display=swap" rel="stylesheet">
 
 	{#each preloadFont as href}
 		<link rel="preload" {href} as="font" type="font/woff2" crossorigin />

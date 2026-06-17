@@ -9,9 +9,18 @@
 			>{@html wordmark}</a
 		>
 	</div>
+	<!-- <button class="about">ABOUT</button> -->
 </header>
 
 <style>
+	.about {
+		background: none;
+		font-family: 'Atlas Grotesk Web', -apple-system, BlinkMacSystemFont, sans-serif;
+		font-size: 12px;
+		text-decoration: underline;
+		letter-spacing: 1px;
+		font-weight: 600;
+	}
 
 	header {
 		position: fixed;
@@ -54,7 +63,7 @@
 
 	@media (max-width: 400px) {
 		.wordmark {
-			max-width: 10.5em;
+			max-width: 12.5em;
 			padding-left: 8px;
 			/* transform: translate(-18px, -19px) rotate(-4deg); */
 		}
@@ -66,7 +75,7 @@
 	}
 	@media (max-width: 360px) {
 		.wordmark {
-			max-width: 10.5em;
+			max-width: 12.5em;
 			/* transform: translate(-14px, -15px) rotate(-4deg); */
 		}
 	}

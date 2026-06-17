@@ -37,6 +37,9 @@
 	let searchInput = "";
 	let showAutocompletes = false;
 	let showModal = $state(false);
+	let showInfoModal = $state(false);
+	let infoModalCloseEl = $state(null);
+	let infoModalTriggerEl;
 	let instanceSelected = $state(null);
 	let citiesList = $state(null);
 	let statesList = $state(null);
@@ -426,6 +429,22 @@
 	});
 
 	$effect(() => {
+		if (showInfoModal) {
+			infoModalTriggerEl = document.activeElement;
+			infoModalCloseEl?.focus();
+		} else {
+			infoModalTriggerEl?.focus();
+		}
+	});
+
+	$effect(() => {
+		if (!showInfoModal) return;
+		function handleEsc(e) { if (e.key === 'Escape') showInfoModal = false; }
+		document.addEventListener('keydown', handleEsc);
+		return () => document.removeEventListener('keydown', handleEsc);
+	});
+
+	$effect(() => {
 		if (!controls?.domElement) return;
 		controls.domElement.style.pointerEvents = showModal ? 'none' : '';
 		controls.enabled = !showModal;
@@ -558,6 +577,14 @@
 		const views = await sootElement?.expose?.getViews();
 		if (views && views.length > 0) {
 			sootElement?.expose?.setActiveView(views[0].id);
+		}
+	}
+
+	// Tour content is injected via {@html}, so "more-info" button clicks are caught
+	// via delegation on the containing element rather than a direct onclick.
+	function handleTourContentClick(e) {
+		if (e.target.closest('.more-info')) {
+			showInfoModal = true;
 		}
 	}
 
@@ -818,8 +845,6 @@
 						menuToImages.get(menuId).push({ id: imageId, page });
 						
 					});
-
-
 
 					// Sort by page number and extract IDs
 					for (const [menuId, images] of menuToImages) {
@@ -1381,6 +1406,16 @@
 						// Initial update
 						updateScreenLabels();
 						
+
+						let lastLabelUpdate = 0;
+						controls.addEventListener('change', () => {
+							const now = performance.now();
+							const interval = dimensions.width <= 800 ? 100 : 0; // 10fps on mobile, rAF on desktop
+							if (now - lastLabelUpdate < interval) return;
+							lastLabelUpdate = now;
+							throttledUpdateScreenLabels();
+						});
+
 						// Listen for camera changes (throttled)
 						controls.addEventListener('change', () => throttledUpdateScreenLabels());
 						
@@ -1521,8 +1556,14 @@
 
 <svelte:boundary onerror={() => {}}>
 
+	<div
+		aria-live="polite"
+		aria-atomic="true"
+		class="sr-only"
+	>{relatedImageIds[1] ? `Menu selected: ${relatedImageIds[1].restaurant_title ?? 'Unknown restaurant'}, ${relatedImageIds[1].year ?? 'year unknown'}` : ''}</div>
+
 	<div class:modal-open={showModal}>
-		{#if loadingVisible}
+		{#if loadingVisible && dimensions.width}
 			<Header />
 			<div transition:fade={{duration: 300}} class="loading-container">
 				<p>Loading...</p>
@@ -1531,7 +1572,7 @@
 						<img 
 						class="loading-menu-image"
 						src="assets/loading.jpg"
-						alt="Loading menu"
+						alt="Assortment of Restaurant Menus"
 						transition:fade={{duration: 300}}
 						/>
 					</div>
@@ -1539,7 +1580,7 @@
 					<img 
 					class="loading-menu-image"
 					src="assets/loading-mobile.jpg"
-					alt="Loading menu"
+					alt="Assortment of Restaurant Menus"
 					transition:fade={{duration: 300}}
 					/>
 				{/if}
@@ -1547,11 +1588,13 @@
 		{/if}
 
 
-		<div id="soot-publication">
-		
+		<div id="soot-publication" role="region" aria-label="Interactive visualization of 5,000 menus">
+
 		<soot-publication
 			bind:this={sootElement}
 			slug="2bb935d1-b350-4915-b4f6-e20a4dcace91"
+			role="img"
+			aria-label="A spatial grid of 5,000 historical restaurant menus from the NYPL Buttolph Collection, 1880–1920. Pan and zoom to explore. Tap a menu to view details."
 		>
 			<div slot="overlay-container">
 			</div>
@@ -1562,15 +1605,18 @@
 
 				
 
-					<div 
+					<!-- svelte-ignore a11y_no_noninteractive_tabindex -->
+					<div
 						class="tour-container {tourMinimized ? 'minimized' : ''}"
 						onclick={() => { if (tourMinimized) tourMinimized = false; }}
-						role="button"
-						tabindex="0"
+						role={tourMinimized ? 'button' : undefined}
+						tabindex={tourMinimized ? 0 : undefined}
+						aria-label={tourMinimized ? 'Expand tour' : undefined}
 						onkeydown={(e) => { if (tourMinimized && (e.key === 'Enter' || e.key === ' ')) tourMinimized = false; }}
 					>
 						{#key tourStep}
-							<div class="tour-content" in:fade={{duration: 600}}>
+							<!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_static_element_interactions -->
+							<div class="tour-content" onclick={handleTourContentClick}>
 								{#each tourText[tourStep].content as paragraph}
 									<p>{@html paragraph.value}</p>
 								{/each}
@@ -1622,24 +1668,24 @@
 					<div class="pan-zoom-buttons">
 						<div class="pan-buttons">
 							<div class="pan-row pan-row-top">
-								<button class="pan-btn" onclick={() => panCanvas('up')} title="Pan up">
+								<button class="pan-btn" onclick={() => panCanvas('up')} aria-label="Pan up">
 									<div style="transform: rotate(-90deg);">
 										{@html arrowRight}
 									</div>
 								</button>
 							</div>
 							<div class="pan-row">
-								<button class="pan-btn" onclick={() => panCanvas('left')} title="Pan left">
+								<button class="pan-btn" onclick={() => panCanvas('left')} aria-label="Pan left">
 									<div style="transform: rotate(180deg);">
 										{@html arrowRight}
 									</div>
 								</button>
-								<button class="pan-btn" onclick={() => panCanvas('down')} title="Pan down">
+								<button class="pan-btn" onclick={() => panCanvas('down')} aria-label="Pan down">
 									<div style="transform: rotate(90deg);">
 										{@html arrowRight}
 									</div>
 								</button>
-								<button class="pan-btn" onclick={() => panCanvas('right')} title="Pan right">
+								<button class="pan-btn" onclick={() => panCanvas('right')} aria-label="Pan right">
 									<div style="transform: rotate(0deg);">
 										{@html arrowRight}
 									</div>
@@ -1647,10 +1693,10 @@
 							</div>
 						</div>
 						<div class="zoom-buttons">
-							<button class="pan-btn" onclick={() => zoomCanvas('in')} title="Zoom in">
+							<button class="pan-btn" onclick={() => zoomCanvas('in')} aria-label="Zoom in">
 								{@html plus}
 							</button>
-							<button class="pan-btn" onclick={() => zoomCanvas('out')} title="Zoom out">
+							<button class="pan-btn" onclick={() => zoomCanvas('out')} aria-label="Zoom out">
 								{@html minus}
 							</button>
 						</div>
@@ -1688,11 +1734,12 @@
 				<!-- Controls tuning panel -->
 				{#if loaded}
 					<div class="controls-area">
-						<div class="title-text">5,000 menus from 1880-1920</div>
-						<button 
+						<div class="title-text">5,000 menus, years 1880-1920</div>
+						<button
 							class="controls-panel-toggle"
 							onclick={() => showControlsPanel = !showControlsPanel}
-							title="Pan/zoom settings"
+							aria-label="Pan/zoom settings"
+							aria-expanded={showControlsPanel}
 						>
 							{showControlsPanel ? '▼' : '⚙'}
 						</button>
@@ -1701,9 +1748,11 @@
 							<h4>Pan/Zoom Tuning</h4>
 							<label class="toggle-row">
 								<span>staticMoving (instant)</span>
-								<button 
+								<button
 									class="toggle-btn {controlSettings.staticMoving ? 'on' : 'off'}"
 									onclick={() => controlSettings.staticMoving = !controlSettings.staticMoving}
+									aria-label={`Static moving (instant): ${controlSettings.staticMoving ? 'on' : 'off'}`}
+									aria-pressed={controlSettings.staticMoving}
 								>
 									{controlSettings.staticMoving ? 'ON' : 'OFF'}
 								</button>
@@ -1748,12 +1797,12 @@
 					</div>
 				{/if}
 
-				<div class="geocoder-container" style="visibility: {tourMinimized ? 'visible' : 'hidden'};" bind:this={geocoderContainer}>
+				<div class="geocoder-container" style="visibility: {tourMinimized ? 'visible' : 'hidden'};" bind:this={geocoderContainer} inert={tourMinimized ? undefined : true}>
 					{#if citiesList}
 						<div class="filter-container">
 							{#if activeFilter}
 								<!-- Show active filter with X button -->
-								<button class="filter-button active-filter" onclick={clearFilter}>
+								<button class="filter-button active-filter" onclick={clearFilter} aria-label={`Clear filter: ${decodeURIComponent(activeFilter)}`}>
 									{decodeURIComponent(activeFilter)} <span class="clear-x">×</span>
 								</button>
 							{:else}
@@ -1780,14 +1829,14 @@
 								<div class="divider"></div>
 								<!-- <button style="background: #32641d;" class="filter-button fancy-button" onclick={() => animalFilter('obscure')}>Obscure Dishes</button> -->
 								<button style="" class="filter-button mobile-hide fancy-button" onclick={() => rareFilter('rare')}>Uncommon Meats</button>
-								<button style="" class="filter-button mobile-hide fancy-button" onclick={() => animalFilter('squirrel')}><Squirrel size="20" strokeWidth="1.5" color="#000"/></button>
-								<button style="" class="filter-button mobile-hide fancy-button" onclick={() => animalFilter('turtle')}><Turtle size="20" strokeWidth="1.5" color="#000"/></button>
-								<button style="" class="filter-button mobile-hide fancy-button" onclick={() => animalFilter('birdie')}><Bird size="20" strokeWidth="1.5" color="#000"/></button>
-								<a class="menu-story" href="https://pudding.cool/2026/06/menu-story" target="_blank">
+								<button style="" class="filter-button mobile-hide fancy-button" onclick={() => animalFilter('squirrel')} aria-label="Filter by squirrel dishes"><Squirrel size="20" strokeWidth="1.5" color="#000"/></button>
+								<button style="" class="filter-button mobile-hide fancy-button" onclick={() => animalFilter('turtle')} aria-label="Filter by turtle dishes"><Turtle size="20" strokeWidth="1.5" color="#000"/></button>
+								<button style="" class="filter-button mobile-hide fancy-button" onclick={() => animalFilter('birdie')} aria-label="Filter by bird dishes"><Bird size="20" strokeWidth="1.5" color="#000"/></button>
+								<a class="menu-story" href="https://pudding.cool/2026/06/menu-story" target="_blank" aria-label="Read our Detailed Guide: a History of Menus is a Menu of History (opens in new tab)">
 									{#if dimensions.width > 450}
 									<p><b>Read our Detailed Guide:</b> a History of Menus is a Menu of History »</p>
 									{:else}
-										<p>Read More »</p>
+										<p style="letter-spacing: -0.1px;">Read More »</p>
 									{/if}
 								</a>
 							{/if}
@@ -1801,10 +1850,39 @@
 		<div class="modal-container">
 			<Modal bind:showModal {instanceSelected} relatedMetadata={relatedImageIds[1]} relatedImageIds={relatedImageIds[0]} {sootElement} {aspectRatioMap} {activeFilter} {tourFilter} {metaData} onOpenRandom={openRandomModal} {dimensions} />
 		</div>
+
+		{#if showInfoModal}
+			<!-- svelte-ignore a11y_click_events_have_key_events -->
+			<div
+				class="info-modal-overlay"
+				transition:fade={{duration: 200}}
+				onclick={() => showInfoModal = false}
+				role="presentation"
+			>
+				<div class="info-modal" onclick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" aria-label="About this project" tabindex="-1">
+					<button class="info-modal-close" onclick={() => showInfoModal = false} aria-label="Close" bind:this={infoModalCloseEl}>×</button>
+					{#each copy.meta.dataInfo as paragraph}
+						<p>{@html paragraph.value}</p>
+					{/each}
+				</div>
+			</div>
+		{/if}
 	</div>
 </svelte:boundary>
 
 <style>
+	.sr-only {
+		position: absolute;
+		width: 1px;
+		height: 1px;
+		padding: 0;
+		margin: -1px;
+		overflow: hidden;
+		clip: rect(0, 0, 0, 0);
+		white-space: nowrap;
+		border: 0;
+	}
+
 	.tour-container {
 		position: fixed;
 		bottom: -2px;
@@ -1896,7 +1974,7 @@
 		position: absolute;
 		top: 50px;
 		left: 10px;
-		width: 300px;
+		width: 380px;
 		z-index: 10000001;
 		display: flex;
 		flex-direction: column-reverse;
@@ -1904,6 +1982,7 @@
 		border-radius: .2rem;
 		padding: 1rem;
 		overflow: visible;
+		pointer-events: none;
 	}
 	.geocoder-container::after {
 		content: '';
@@ -1919,11 +1998,13 @@
 		width: 100%;
 		/* box-shadow: 0 2px 4px rgba(0,0,0,0.2); */
 		box-shadow: none;
+		pointer-events: all;
 	}
 
 	.geocoder-container :global(.mapboxgl-ctrl-geocoder input) {
-		font-family: 'EB Garamond';
-		font-weight: 300;
+		font-family: 'Atlas Grotesk', sans-serif;
+		font-weight: 400;
+		font-size: 16px;
 		-webkit-font-smoothing: antialiased;
 		padding-top: 0;
 		padding-bottom: 0;
@@ -1942,6 +2023,8 @@
 		z-index: 10000002 !important;
 		max-height: 300px;
 		overflow-y: auto;
+		background: white;
+		box-shadow: none;
 	}
 
 	.geocoder-container :global(.mapboxgl-ctrl-geocoder--suggestion) {
@@ -1959,16 +2042,16 @@
 
 	.filter-container button {
 		cursor: pointer;
-		font-size: 12px;
+		font-size: 14px;
 		padding: 0;
 		text-align: left;
 		margin: 0;
 		background: #3e3e3e;
-		padding: 4px 8px;
+		padding: 4px 4px;
 		color: #fff;
 		text-transform: uppercase;
 		font-family: 'EB Garamond';
-		font-weight: 700;
+		font-weight: 500;
 		-webkit-font-smoothing: antialiased;
 		border-radius: 1px;
 		background: none;
@@ -1976,6 +2059,7 @@
 		color: black;
 		border-right: 2px solid black;
 		border-bottom: 2px solid black;
+		pointer-events: all;
 	}
 
 	.filter-button button:hover {
@@ -2018,7 +2102,7 @@
 		font-family: 'EB Garamond', sans-serif;
 		font-size: 18px;
 		line-height: 1.1;
-		font-weight: 600;
+		font-weight: 500;
 		color: #333;
 		text-align: center;
 		/* white-space: nowrap; */
@@ -2028,6 +2112,7 @@
 		margin-bottom: 7px;
 		-webkit-font-smoothing: antialiased;
 		-moz-osx-font-smoothing: grayscale;
+		background: #fffef5;
 	}
 	.controls-panel-toggle {
 		width: 36px;
@@ -2217,6 +2302,46 @@
 		pointer-events: none;
 	}
 
+	.info-modal-overlay {
+		position: fixed;
+		inset: 0;
+		z-index: 10000005;
+		background-color: rgba(0,0,0,0.6);
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		cursor: pointer;
+	}
+	.info-modal {
+		position: relative;
+		background: #FFFEFB;
+		border: 1px solid rgba(0,0,0,0.2);
+		border-radius: 3px;
+		max-width: 500px;
+		width: calc(100% - 40px);
+		padding: 30px 25px;
+		cursor: default;
+		font-family: 'EB Garamond', sans-serif;
+		font-size: 18px;
+		line-height: 1.3;
+		color: #111;
+	}
+	.info-modal p {
+		margin: 0;
+		margin-bottom: 10px;
+	}
+	.info-modal-close {
+		position: absolute;
+		top: 10px;
+		right: 10px;
+		background: none;
+		border: none;
+		font-size: 24px;
+		line-height: 1;
+		cursor: pointer;
+		color: #333;
+	}
+
 	@media (max-width: 800px) {
 		/* Slide the canvas out — target the web component, not the wrapper div,
 		   so the fixed-position modal-container is not affected by the transform. */
@@ -2266,7 +2391,7 @@
 	.loading-container p {
 		font-family: 'EB Garamond', monospace;
 		font-size: 24px;
-		font-weight: 600;
+		font-weight: 400;
 		color: black;
 		letter-spacing: 0.02em;
 	}
@@ -2301,6 +2426,7 @@
     	text-decoration-thickness: 1px;
 	    font-size: 14px;
 		margin-top: 10px;
+		pointer-events: all;
 	}
 
 
@@ -2373,6 +2499,7 @@
 		-moz-osx-font-smoothing: grayscale;
 		align-items: center;
 		padding-top: 1rem;
+		user-select: none;
 		/* flex: 1; */
 	}
 
@@ -2390,21 +2517,26 @@
 	}
 
 	@media (max-width: 450px) {
+		.pan-buttons {
+			border-color: #000;
+			margin-bottom: 0;
+		}
 		.menu-story {
 			background: black;
 			margin: 0;
 			text-decoration: none;
         	color: white;
         	padding: 0px 10px;
+			font-size: 13px;
 		}
 		.menu-story p {
-			line-height: 1.7;
+			line-height: 1.8;
 		}
 		.mobile-hide {
 			display: none;
 		}
 		.tour-container {
-			padding: 20px 15px;
+			padding: 20px 10px;
 			padding-bottom: 10px;
 			max-width: 800px;
 			width: calc(100% - 20px);
@@ -2412,17 +2544,37 @@
 			padding-top: 10px;
 		}
 
+		.loading-container {
+        	background: #fffdf1;  /* already solid here */
+        	backdrop-filter: none;
+        	-webkit-backdrop-filter: none;
+	    }
+
+
 		.tour-content p {
-			font-size: 18px;
+			font-size: 16px;
+			line-height: 1.1;
+		}
+		.more-info {
+			font-size: 13px;
+		}
+
+		.info-modal p {
+			font-size: 16px;
+			line-height: 1.1;
 		}
 
 		.tour-button {
-			font-size: 15px;
+			font-size: 14px;
+			padding-top: 10px;
+		}
+		.tour-arrow-right {
+			margin-right: 0;
 		}
 		.pan-zoom-buttons {
 			right: 10px;
 			position: fixed;
-			top: 45px;
+			top: 55px;
 			z-index: 1000000000;
 		}
 		.zoom-buttons {
@@ -2430,7 +2582,7 @@
 		}
 		.geocoder-container {
 			visibility: visible;
-			top: 22px;
+			top: 32px;
 			width: calc(100vw - 70px);
 			backdrop-filter: none;
 			padding: 0;
@@ -2445,9 +2597,13 @@
 		}
 		.title-text {
 			text-align: right;
-			width: 220px;
+			width: 110px;
 			font-size: 16px;
-			margin-top: 4px;
+			margin-top: 0px;
+
+		}
+		.controls-area {
+			top: 7px;
 		}
 		.divider {
 			display: none;
@@ -2455,9 +2611,13 @@
 		.tour-tab {
 			font-size: 14px;
 		}
+		.filter-container {
+			gap: 3px;
+		}
 		.filter-container button {
 			padding: 4px 7px;
 			background: #fff;
+			font-size: 12px;
 		}
 		.geocoder-container :global(.mapboxgl-ctrl-geocoder input) {
 			height: 35px;
@@ -2486,5 +2646,9 @@
 			margin: 0 auto;
 			margin-top: 10px;
 		}	
+	}
+
+	.info-modal p {
+
 	}
 </style>

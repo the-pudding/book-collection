@@ -7,7 +7,7 @@
 :root {
 	/* font */
 	--sans: "EB Garamond", -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;
-	--serif: "Tiempos Text", Iowan Old Style, Times New Roman, Times, serif;
+	--serif: "EB Garamond", Iowan Old Style, Times New Roman, Times, serif;
 	--mono: Menlo, Consolas, Monaco, monospace;
 
 	/* z-index */
@@ -49,6 +49,8 @@
 
 .mapboxgl-ctrl-geocoder .suggestions {
 	position: relative;
+	box-shadow: none;
+	background: white;
 }
 
 .mapboxgl-ctrl-geocoder--powered-by {
@@ -56,16 +58,13 @@
 }
 
 .geocoder-container .mapboxgl-ctrl-geocoder--input {
-	border: 1px solid rgb(147 147 147);
+	border: 1px solid rgb(147,147,147);
 	box-shadow: none;
 	outline: none;
 }
 
 .geocoder-container .mapboxgl-ctrl-geocoder--input:focus {
-	/* outline: 1px solid #000; */
-	outline-offset: 0px;
 	box-shadow: none;
-	outline: none;
 }
 
 @media screen and (prefers-reduced-motion: no-preference) {
@@ -105,7 +104,7 @@ svg {
 }
 
 .note {
-	font-style: italic;
+	/* font-style: italic; */
 	color: #000;
 }
 
@@ -117,4 +116,29 @@ svg {
 	position: fixed;
 	height: 100vh;
 	width: 100vw;
+}
+
+.tour-content b {
+	font-weight: 600;
+}
+
+.more-info {
+	background: none;
+    padding: 0;
+    font-family: 'Atlas Grotesk', sans-serif;
+    font-size: 14px;
+    text-decoration: underline;
+    font-weight: 500;
+    /* -webkit-font-smoothing: antialiased; */
+}
+
+.more-info:hover {
+	background: none;
+}
+
+
+@media (max-width: 450px) {
+	.mapboxgl-ctrl-geocoder .mapboxgl-ctrl-geocoder--pin-right > * {
+		top: 0px;
+	}
 }
